@@ -11,6 +11,7 @@
 <p align="center">
   <a href="#installation">Installation</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
+  <a href="#staying-under-the-radar">Stealth</a> &middot;
   <a href="#output-format">Output Format</a> &middot;
   <a href="#configuration">Configuration</a> &middot;
   <a href="LICENSE">License</a>
@@ -37,21 +38,53 @@ xTap is a Chrome extension that silently intercepts the GraphQL API responses X/
 ## How It Works
 
 ```
-X/Twitter  ──GraphQL──▶  Chrome  ──intercept──▶  xTap Extension
-                                                       │
-                                              native messaging
-                                                       │
-                                                       ▼
-                                               xtap_host.py
-                                                       │
-                                                       ▼
-                                              tweets.jsonl
+        X/Twitter GraphQL responses
+                    │
+                    ▼
+     ┌────────────────────────────┐
+     │     content-main.js        │  MAIN world
+     │    patches fetch & XHR     │
+     └──────────────┬─────────────┘
+                    │ CustomEvent (random name)
+                    ▼
+     ┌────────────────────────────┐
+     │     content-bridge.js      │  ISOLATED world
+     │   relays to service worker │
+     └──────────────┬─────────────┘
+                    │ chrome.runtime.sendMessage
+                    ▼
+     ┌────────────────────────────┐
+     │     background.js          │  Service worker
+     │   parse, dedup, batch      │
+     └──────────────┬─────────────┘
+                    │ native messaging
+                    ▼
+     ┌────────────────────────────┐
+     │     xtap_host.py           │  Python
+     │     append JSONL           │
+     └──────────────┬─────────────┘
+                    │
+                    ▼
+             tweets.jsonl
 ```
 
-1. A content script patches `fetch` and `XMLHttpRequest` in the page context to observe GraphQL responses
-2. Captured payloads are relayed through an isolated-world bridge to the service worker
-3. The service worker parses tweet objects, deduplicates them, and batches them to a native messaging host
-4. A small Python host appends each tweet as a JSON line to disk
+1. A MAIN world content script patches `fetch` and `XMLHttpRequest.open()` to observe GraphQL responses as they arrive
+2. Payloads are relayed via a random-named `CustomEvent` to an ISOLATED world bridge, which forwards them to the service worker
+3. The service worker parses, normalizes, deduplicates, and batches tweets
+4. Batches are sent over Chrome native messaging to a Python host that appends each tweet as a JSON line to disk
+
+## Staying Under the Radar
+
+xTap is designed to be passive and hard to distinguish from normal browser activity:
+
+- **No extra network requests** — only reads responses the browser already received; nothing to spot in a network log
+- **Native-looking API patches** — `fetch` and `XMLHttpRequest.prototype.open` are patched with `toString()` overrides that return `[native code]`, passing the most common runtime integrity checks
+- **No expando properties** — XHR URL tracking uses a `WeakMap` instead of attaching properties to the XHR instance, which would be trivially detectable
+- **Random event channel** — the MAIN↔ISOLATED world bridge uses a `CustomEvent` with a per-page-load random name; the `<meta>` beacon that communicates the name is removed immediately after the bridge reads it
+- **Zero console output in page context** — all logging happens in the service worker and parser, which run outside the page's JavaScript environment
+- **Minimal permissions** — only `storage` and `nativeMessaging`; no `webRequest`, no host permissions beyond `x.com` / `twitter.com`
+
+These measures don't make detection impossible — a determined page script could still compare prototype references or probe for patched behavior — but they avoid the low-hanging signals that fingerprinting scripts typically check.
 
 ## Installation
 
@@ -120,7 +153,7 @@ Each line in `tweets.jsonl` is a self-contained JSON object:
 ```jsonc
 {
   "id": "1234567890",
-  "created_at": "Mon Jan 01 00:00:00 +0000 2024",
+  "created_at": "2024-01-01T00:00:00.000Z",
   "author": {
     "id": "987654321",
     "username": "handle",

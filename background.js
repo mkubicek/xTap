@@ -132,6 +132,7 @@ const IGNORED_ENDPOINTS = new Set([
   'SidebarUserRecommendations', 'useFetchProductSubscriptionsQuery',
   'TweetResultByRestId', 'ExplorePage', 'UserByScreenName',
   'ProfileSpotlightsQuery', 'useFetchProfileSections_canViewExpandedProfileQuery',
+  'UserSuperFollowTweets', 'NotificationsTimeline', 'AuthenticatePeriscope',
 ]);
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
