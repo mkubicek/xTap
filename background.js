@@ -65,7 +65,7 @@ function connectNative() {
       nativePort = null;
     });
     nativePort.onMessage.addListener((msg) => {
-      if (msg.ok) {
+      if (msg.ok && msg.count !== undefined) {
         console.log(`[xTap] Host wrote ${msg.count} tweets`);
       }
     });
@@ -165,7 +165,7 @@ const IGNORED_ENDPOINTS = new Set([
   'ProfileSpotlightsQuery', 'useFetchProfileSections_canViewExpandedProfileQuery',
   'UserSuperFollowTweets', 'NotificationsTimeline', 'AuthenticatePeriscope',
   'BookmarkFoldersSlice', 'EditBookmarkFolder', 'fetchPostQuery',
-  'useReadableMessagesSnapshotMutation',
+  'useReadableMessagesSnapshotMutation', 'UsersByRestIds',
 ]);
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
