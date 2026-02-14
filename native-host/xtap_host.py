@@ -54,14 +54,11 @@ def main():
         if msg is None:
             break
 
-        tweets = msg.get('tweets', [])
-
-        # Use per-message outputDir if provided, otherwise fall back to default
+        # Resolve output directory
         msg_dir = msg.get('outputDir', '').strip()
         if msg_dir:
             out_dir = os.path.expanduser(msg_dir)
             os.makedirs(out_dir, exist_ok=True)
-            # Load seen IDs for custom dir on first use
             if out_dir != OUTPUT_DIR and not hasattr(main, '_custom_dirs'):
                 main._custom_dirs = set()
             if out_dir != OUTPUT_DIR and out_dir not in getattr(main, '_custom_dirs', set()):
@@ -70,6 +67,17 @@ def main():
         else:
             out_dir = OUTPUT_DIR
 
+        # Handle log messages
+        if msg.get('type') == 'LOG':
+            log_file = os.path.join(out_dir, f'debug-{date.today().isoformat()}.log')
+            with open(log_file, 'a') as f:
+                for line in msg.get('lines', []):
+                    f.write(line + '\n')
+            send_message({'ok': True, 'logged': len(msg.get('lines', []))})
+            continue
+
+        # Handle tweet messages
+        tweets = msg.get('tweets', [])
         out_file = os.path.join(out_dir, f'tweets-{date.today().isoformat()}.jsonl')
 
         count = 0

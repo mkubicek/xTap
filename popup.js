@@ -4,6 +4,7 @@ const alltimeEl = document.getElementById('alltime-count');
 const toggleBtn = document.getElementById('toggle');
 const outputDirInput = document.getElementById('output-dir');
 const saveDirBtn = document.getElementById('save-dir');
+const debugToggle = document.getElementById('debug-toggle');
 
 function render(state) {
   sessionEl.textContent = state.sessionCount.toLocaleString();
@@ -28,6 +29,8 @@ function render(state) {
   if (state.outputDir) {
     outputDirInput.value = state.outputDir;
   }
+
+  debugToggle.checked = !!state.debugLogging;
 }
 
 function refresh() {
@@ -47,6 +50,12 @@ saveDirBtn.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'SET_OUTPUT_DIR', outputDir: dir }, () => {
     saveDirBtn.textContent = 'Saved!';
     setTimeout(() => { saveDirBtn.textContent = 'Save'; }, 1500);
+  });
+});
+
+debugToggle.addEventListener('change', () => {
+  chrome.runtime.sendMessage({ type: 'SET_DEBUG', debugLogging: debugToggle.checked }, () => {
+    refresh();
   });
 });
 

@@ -14,6 +14,8 @@ let seenIds = new Set();
 let sessionCount = 0;
 let allTimeCount = 0;
 let outputDir = '';
+let debugLogging = false;
+let logBuffer = [];
 
 // --- State persistence ---
 
@@ -26,12 +28,30 @@ async function saveState() {
 }
 
 async function restoreState() {
-  const stored = await chrome.storage.local.get(['seenIds', 'allTimeCount', 'captureEnabled', 'outputDir']);
+  const stored = await chrome.storage.local.get(['seenIds', 'allTimeCount', 'captureEnabled', 'outputDir', 'debugLogging']);
   if (stored.seenIds) seenIds = new Set(stored.seenIds);
   if (typeof stored.allTimeCount === 'number') allTimeCount = stored.allTimeCount;
   if (typeof stored.captureEnabled === 'boolean') captureEnabled = stored.captureEnabled;
   if (typeof stored.outputDir === 'string') outputDir = stored.outputDir;
+  if (typeof stored.debugLogging === 'boolean') debugLogging = stored.debugLogging;
 }
+
+// --- Debug logging ---
+
+const _origLog = console.log;
+const _origWarn = console.warn;
+const _origError = console.error;
+
+function debugLog(level, args) {
+  if (!debugLogging) return;
+  const ts = new Date().toISOString();
+  const text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+  logBuffer.push(`${ts} [${level}] ${text}`);
+}
+
+console.log = (...args) => { _origLog(...args); debugLog('LOG', args); };
+console.warn = (...args) => { _origWarn(...args); debugLog('WARN', args); };
+console.error = (...args) => { _origError(...args); debugLog('ERROR', args); };
 
 // --- Native messaging ---
 
@@ -59,17 +79,28 @@ function connectNative() {
 // --- Batching & flushing ---
 
 function scheduledFlush() {
-  if (buffer.length > 0) flush();
+  if (buffer.length > 0 || logBuffer.length > 0) flush();
+}
+
+function flushLogs() {
+  if (logBuffer.length === 0 || !nativePort) return;
+  const lines = logBuffer.splice(0);
+  try {
+    const message = { type: 'LOG', lines };
+    if (outputDir) message.outputDir = outputDir;
+    nativePort.postMessage(message);
+  } catch (e) {
+    _origError('[xTap] Log send failed:', e);
+  }
 }
 
 function flush() {
-  if (buffer.length === 0) return;
-
-  const batch = buffer.splice(0);
+  if (buffer.length === 0 && logBuffer.length === 0) return;
 
   if (!nativePort) connectNative();
 
-  if (nativePort) {
+  if (buffer.length > 0 && nativePort) {
+    const batch = buffer.splice(0);
     try {
       const message = { tweets: batch };
       if (outputDir) message.outputDir = outputDir;
@@ -79,11 +110,11 @@ function flush() {
       buffer.unshift(...batch);
       nativePort = null;
     }
-  } else {
-    // Put back if no connection
-    buffer.unshift(...batch);
+  } else if (buffer.length > 0) {
     console.warn('[xTap] No native host connection, tweets buffered:', buffer.length);
   }
+
+  if (debugLogging) flushLogs();
 }
 
 function enqueueTweets(tweets) {
@@ -166,8 +197,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       allTimeCount,
       connected: nativePort !== null,
       buffered: buffer.length,
-      outputDir
+      outputDir,
+      debugLogging
     });
+    return true;
+  }
+
+  if (msg.type === 'SET_DEBUG') {
+    debugLogging = !!msg.debugLogging;
+    chrome.storage.local.set({ debugLogging });
+    if (debugLogging) {
+      console.log('[xTap] Debug logging enabled');
+    } else {
+      logBuffer = [];
+    }
+    sendResponse({ debugLogging });
     return true;
   }
 

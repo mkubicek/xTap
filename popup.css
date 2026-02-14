@@ -130,3 +130,20 @@ button.paused {
   background: #1d9bf0;
   color: #fff;
 }
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+
+.toggle-row input[type="checkbox"] {
+  accent-color: #1d9bf0;
+}
+
+.toggle-label {
+  font-size: 12px;
+  color: #8b98a5;
+}
