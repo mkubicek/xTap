@@ -55,18 +55,32 @@ console.error = (...args) => { _origError(...args); debugLog('ERROR', args); };
 
 // --- Native messaging ---
 
+let disconnectCount = 0;
+let lastDisconnect = 0;
+
 function connectNative() {
   if (nativePort) return;
   try {
     nativePort = chrome.runtime.connectNative(NATIVE_HOST);
     nativePort.onDisconnect.addListener(() => {
       const err = chrome.runtime.lastError?.message || 'unknown';
-      console.warn(`[xTap] Native host disconnected: ${err}`);
+      const now = Date.now();
+      disconnectCount++;
+      const rapid = (now - lastDisconnect) < 5000;
+      lastDisconnect = now;
+      if (rapid) {
+        console.error(`[xTap] Native host disconnected rapidly (${disconnectCount}x): ${err} — possible crash loop`);
+      } else {
+        console.warn(`[xTap] Native host disconnected: ${err}`);
+      }
       nativePort = null;
     });
     nativePort.onMessage.addListener((msg) => {
-      if (msg.ok && msg.count !== undefined) {
+      if (!msg.ok && msg.error) {
+        console.error(`[xTap] Host error: ${msg.error}`);
+      } else if (msg.count !== undefined) {
         console.log(`[xTap] Host wrote ${msg.count} tweets`);
+        disconnectCount = 0;
       }
     });
     console.log('[xTap] Connected to native host');
@@ -216,9 +230,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === 'SET_OUTPUT_DIR') {
-    outputDir = msg.outputDir || '';
-    chrome.storage.local.set({ outputDir });
-    sendResponse({ outputDir });
+    const newDir = msg.outputDir || '';
+    if (newDir && nativePort) {
+      // Ask native host to test-write before accepting
+      const listener = (resp) => {
+        if (resp.type !== 'TEST_PATH') return;
+        nativePort.onMessage.removeListener(listener);
+        if (resp.ok) {
+          outputDir = newDir;
+          chrome.storage.local.set({ outputDir });
+          sendResponse({ outputDir });
+        } else {
+          sendResponse({ error: resp.error || 'Cannot write to that directory' });
+        }
+      };
+      nativePort.onMessage.addListener(listener);
+      nativePort.postMessage({ type: 'TEST_PATH', outputDir: newDir });
+    } else {
+      outputDir = newDir;
+      chrome.storage.local.set({ outputDir });
+      sendResponse({ outputDir });
+    }
     return true;
   }
 

@@ -54,46 +54,62 @@ def main():
         if msg is None:
             break
 
-        # Resolve output directory
-        msg_dir = msg.get('outputDir', '').strip()
-        if msg_dir:
-            out_dir = os.path.expanduser(msg_dir)
-            os.makedirs(out_dir, exist_ok=True)
-            if out_dir != OUTPUT_DIR and not hasattr(main, '_custom_dirs'):
-                main._custom_dirs = set()
-            if out_dir != OUTPUT_DIR and out_dir not in getattr(main, '_custom_dirs', set()):
-                seen_ids.update(load_seen_ids(out_dir))
-                main._custom_dirs.add(out_dir)
-        else:
-            out_dir = OUTPUT_DIR
+        try:
+            _handle_message(msg, seen_ids)
+        except Exception as e:
+            send_message({'ok': False, 'error': str(e)})
 
-        # Handle log messages
-        if msg.get('type') == 'LOG':
-            log_file = os.path.join(out_dir, f'debug-{date.today().isoformat()}.log')
-            with open(log_file, 'a') as f:
-                for line in msg.get('lines', []):
-                    f.write(line + '\n')
-            send_message({'ok': True, 'logged': len(msg.get('lines', []))})
-            continue
 
-        # Handle tweet messages
-        tweets = msg.get('tweets', [])
-        out_file = os.path.join(out_dir, f'tweets-{date.today().isoformat()}.jsonl')
+def _handle_message(msg, seen_ids):
+    # Resolve output directory
+    msg_dir = msg.get('outputDir', '').strip()
+    if msg_dir:
+        out_dir = os.path.expanduser(msg_dir)
+        os.makedirs(out_dir, exist_ok=True)
+        if out_dir != OUTPUT_DIR and not hasattr(_handle_message, '_custom_dirs'):
+            _handle_message._custom_dirs = set()
+        if out_dir != OUTPUT_DIR and out_dir not in getattr(_handle_message, '_custom_dirs', set()):
+            seen_ids.update(load_seen_ids(out_dir))
+            _handle_message._custom_dirs.add(out_dir)
+    else:
+        out_dir = OUTPUT_DIR
 
-        count = 0
-        dupes = 0
-        with open(out_file, 'a') as f:
-            for tweet in tweets:
-                tid = tweet.get('id')
-                if tid and tid in seen_ids:
-                    dupes += 1
-                    continue
-                if tid:
-                    seen_ids.add(tid)
-                f.write(json.dumps(tweet, ensure_ascii=False) + '\n')
-                count += 1
+    # Handle path test
+    if msg.get('type') == 'TEST_PATH':
+        test_file = os.path.join(out_dir, '.xtap-write-test')
+        with open(test_file, 'w') as f:
+            f.write('ok')
+        os.remove(test_file)
+        send_message({'ok': True, 'type': 'TEST_PATH'})
+        return
 
-        send_message({'ok': True, 'count': count, 'dupes': dupes})
+    # Handle log messages
+    if msg.get('type') == 'LOG':
+        log_file = os.path.join(out_dir, f'debug-{date.today().isoformat()}.log')
+        with open(log_file, 'a') as f:
+            for line in msg.get('lines', []):
+                f.write(line + '\n')
+        send_message({'ok': True, 'logged': len(msg.get('lines', []))})
+        return
+
+    # Handle tweet messages
+    tweets = msg.get('tweets', [])
+    out_file = os.path.join(out_dir, f'tweets-{date.today().isoformat()}.jsonl')
+
+    count = 0
+    dupes = 0
+    with open(out_file, 'a') as f:
+        for tweet in tweets:
+            tid = tweet.get('id')
+            if tid and tid in seen_ids:
+                dupes += 1
+                continue
+            if tid:
+                seen_ids.add(tid)
+            f.write(json.dumps(tweet, ensure_ascii=False) + '\n')
+            count += 1
+
+    send_message({'ok': True, 'count': count, 'dupes': dupes})
 
 
 if __name__ == '__main__':
