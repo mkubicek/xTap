@@ -35,9 +35,18 @@ def main():
             break
 
         tweets = msg.get('tweets', [])
-        count = 0
 
-        with open(OUTPUT_FILE, 'a') as f:
+        # Use per-message outputDir if provided, otherwise fall back to default
+        msg_dir = msg.get('outputDir', '').strip()
+        if msg_dir:
+            out_dir = os.path.expanduser(msg_dir)
+        else:
+            out_dir = OUTPUT_DIR
+        os.makedirs(out_dir, exist_ok=True)
+        out_file = os.path.join(out_dir, 'tweets.jsonl')
+
+        count = 0
+        with open(out_file, 'a') as f:
             for tweet in tweets:
                 f.write(json.dumps(tweet, ensure_ascii=False) + '\n')
                 count += 1

@@ -13,6 +13,7 @@ let flushTimer = null;
 let seenIds = new Set();
 let sessionCount = 0;
 let allTimeCount = 0;
+let outputDir = '';
 
 // --- State persistence ---
 
@@ -25,10 +26,11 @@ async function saveState() {
 }
 
 async function restoreState() {
-  const stored = await chrome.storage.local.get(['seenIds', 'allTimeCount', 'captureEnabled']);
+  const stored = await chrome.storage.local.get(['seenIds', 'allTimeCount', 'captureEnabled', 'outputDir']);
   if (stored.seenIds) seenIds = new Set(stored.seenIds);
   if (typeof stored.allTimeCount === 'number') allTimeCount = stored.allTimeCount;
   if (typeof stored.captureEnabled === 'boolean') captureEnabled = stored.captureEnabled;
+  if (typeof stored.outputDir === 'string') outputDir = stored.outputDir;
 }
 
 // --- Native messaging ---
@@ -69,7 +71,9 @@ function flush() {
 
   if (nativePort) {
     try {
-      nativePort.postMessage({ tweets: batch });
+      const message = { tweets: batch };
+      if (outputDir) message.outputDir = outputDir;
+      nativePort.postMessage(message);
     } catch (e) {
       console.error('[xTap] Send failed, buffering tweets back:', e);
       buffer.unshift(...batch);
@@ -158,8 +162,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sessionCount,
       allTimeCount,
       connected: nativePort !== null,
-      buffered: buffer.length
+      buffered: buffer.length,
+      outputDir
     });
+    return true;
+  }
+
+  if (msg.type === 'SET_OUTPUT_DIR') {
+    outputDir = msg.outputDir || '';
+    chrome.storage.local.set({ outputDir });
+    sendResponse({ outputDir });
     return true;
   }
 

@@ -98,15 +98,20 @@ Open [x.com](https://x.com) and browse normally. The badge counter on the extens
 
 ## Configuration
 
-| Variable | Default | Description |
-|---|---|---|
-| `XTAP_OUTPUT_DIR` | `~/Downloads/xtap` | Directory where `tweets.jsonl` is written |
+### Output directory
 
-Set it before launching Chrome:
+The easiest way to change where tweets are saved is through the extension popup — click the xTap icon and enter your preferred path in the **Output directory** field.
+
+Alternatively, set the `XTAP_OUTPUT_DIR` environment variable before launching Chrome:
 
 ```bash
 export XTAP_OUTPUT_DIR="$HOME/Documents/xtap-data"
 ```
+
+| Setting | Default | Description |
+|---|---|---|
+| Popup "Output directory" | *(empty — uses default)* | Overrides the output path per-session |
+| `XTAP_OUTPUT_DIR` env var | `~/Downloads/xtap` | Fallback when no popup setting is configured |
 
 ## Output Format
 
@@ -143,6 +148,7 @@ Each line in `tweets.jsonl` is a self-contained JSON object:
   "conversation_id": "1234567890",
   "is_retweet": false,
   "retweeted_tweet_id": null,
+  "is_subscriber_only": false,          // true for subscriber-only tweets
   "source_endpoint": "HomeTimeline",    // which GraphQL endpoint
   "captured_at": "2024-01-01T00:00:00.000Z"
 }
