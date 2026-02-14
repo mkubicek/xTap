@@ -5,9 +5,9 @@ import json
 import os
 import struct
 import sys
+from datetime import date
 
 OUTPUT_DIR = os.environ.get('XTAP_OUTPUT_DIR', os.path.expanduser('~/Downloads/xtap'))
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, 'tweets.jsonl')
 
 
 def read_message():
@@ -43,7 +43,7 @@ def main():
         else:
             out_dir = OUTPUT_DIR
         os.makedirs(out_dir, exist_ok=True)
-        out_file = os.path.join(out_dir, 'tweets.jsonl')
+        out_file = os.path.join(out_dir, f'tweets-{date.today().isoformat()}.jsonl')
 
         count = 0
         with open(out_file, 'a') as f:

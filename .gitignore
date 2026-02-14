@@ -3,5 +3,5 @@
 CLAUDE.md
 *.crx
 *.pem
-tweets.jsonl
+tweets*.jsonl
 node_modules/

@@ -65,13 +65,13 @@ xTap is a Chrome extension that silently intercepts the GraphQL API responses X/
      └──────────────┬─────────────┘
                     │
                     ▼
-             tweets.jsonl
+       tweets-YYYY-MM-DD.jsonl
 ```
 
 1. A MAIN world content script patches `fetch` and `XMLHttpRequest.open()` to observe GraphQL responses as they arrive
 2. Payloads are relayed via a random-named `CustomEvent` to an ISOLATED world bridge, which forwards them to the service worker
 3. The service worker parses, normalizes, deduplicates, and batches tweets
-4. Batches are sent over Chrome native messaging to a Python host that appends each tweet as a JSON line to disk
+4. Batches are sent over Chrome native messaging to a Python host that appends each tweet as a JSON line to a daily file (`tweets-2026-02-14.jsonl`)
 
 ## Staying Under the Radar
 
@@ -148,7 +148,7 @@ export XTAP_OUTPUT_DIR="$HOME/Documents/xtap-data"
 
 ## Output Format
 
-Each line in `tweets.jsonl` is a self-contained JSON object:
+Output is written to daily files (`tweets-YYYY-MM-DD.jsonl`). Each line is a self-contained JSON object:
 
 ```jsonc
 {
