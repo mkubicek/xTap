@@ -300,7 +300,8 @@ async function flush() {
 function enqueueTweets(tweets) {
   let newCount = 0;
   for (const tweet of tweets) {
-    if (seenIds.has(tweet.id)) continue;
+    // Article tweets bypass dedup — they enrich a previously captured stub
+    if (seenIds.has(tweet.id) && !tweet.is_article) continue;
     seenIds.add(tweet.id);
     buffer.push(tweet);
     newCount++;
@@ -400,7 +401,7 @@ const IGNORED_ENDPOINTS = new Set([
   'XChatDmSettingsQuery', 'useTotalAdCampaignsForUserQuery', 'useStoryTopicQuery',
   'useSubscriptionsPaymentFailureQuery', 'PinnedTimelines', 'ExploreSidebar',
   'SidebarUserRecommendations', 'useFetchProductSubscriptionsQuery',
-  'TweetResultByRestId', 'ExplorePage', 'UserByScreenName',
+  'ExplorePage', 'UserByScreenName',
   'ProfileSpotlightsQuery', 'useFetchProfileSections_canViewExpandedProfileQuery',
   'UserSuperFollowTweets', 'NotificationsTimeline', 'AuthenticatePeriscope',
   'BookmarkFoldersSlice', 'EditBookmarkFolder', 'fetchPostQuery',

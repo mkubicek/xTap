@@ -31,6 +31,7 @@ xTap is a Chrome extension that silently intercepts the GraphQL API responses X/
 
 - **Zero footprint** — no additional network requests; captures what Chrome already receives
 - **Structured output** — each tweet saved as a clean JSON object with author, metrics, media, and more
+- **Article support** — long-form X articles are captured with full text, inline image references, and Draft.js block structure
 - **Pause / resume** — click the extension icon to toggle capture on the fly
 - **Live counter** — badge on the extension icon shows tweets captured this session
 - **Multi-tab aware** — multiple X tabs feed into the same service worker with shared deduplication
@@ -178,6 +179,7 @@ export XTAP_OUTPUT_DIR="$HOME/Documents/xtap-data"
 | Popup "Output directory" | *(empty — uses default)* | Overrides the output path per-session |
 | `XTAP_OUTPUT_DIR` env var | `~/Downloads/xtap` | Fallback when no popup setting is configured |
 | Debug logging toggle | Off | Writes service worker logs to `debug-YYYY-MM-DD.log` in the output directory |
+| Discovery mode toggle | Off | Logs endpoint response shapes and can dump full JSON responses to disk |
 
 > **macOS note:** On macOS, the HTTP daemon (installed via `install.sh`) runs outside Chrome's TCC sandbox and can write to protected paths like `~/Documents` and iCloud Drive after a one-time macOS permission prompt. If the daemon is unavailable and the extension falls back to native messaging, protected paths will fail with a permission error — `~/Downloads` is the safe default in that case.
 
@@ -218,10 +220,26 @@ Output is written to daily files (`tweets-YYYY-MM-DD.jsonl`). Each line is a sel
   "is_retweet": false,
   "retweeted_tweet_id": null,
   "is_subscriber_only": false,          // true for subscriber-only tweets
+  "is_article": true,                   // present only for long-form articles
+  "article": {                          // present only for long-form articles
+    "title": "Article Title",
+    "text": "Rendered plain text with ![img](media/<id>/file.png) refs",
+    "blocks": [],                       // raw Draft.js content_state blocks
+    "media": [{                         // article image references
+      "id": "...",
+      "url": "https://pbs.twimg.com/...",  // original CDN URL
+      "filename": "image.png",
+      "local_path": "media/<tweet_id>/image.png",
+      "width": 1200,
+      "height": 800
+    }]
+  },
   "source_endpoint": "HomeTimeline",    // which GraphQL endpoint
   "captured_at": "2024-01-01T00:00:00.000Z"
 }
 ```
+
+For regular tweets, `is_article` and `article` are absent. For articles, `text` contains a markdown-style rendering of the article with inline image references pointing to `media/<tweet_id>/`.
 
 ## Project Structure
 

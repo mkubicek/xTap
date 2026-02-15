@@ -98,6 +98,8 @@ The tweet parser (`lib/tweet-parser.js`) has known instruction paths for:
 
 `HomeTimeline`, `HomeLatestTimeline`, `UserTweets`, `UserTweetsAndReplies`, `UserMedia`, `UserLikes`, `TweetDetail`, `SearchTimeline`, `ListLatestTweetsTimeline`, `Bookmarks`, `Likes`, `CommunityTweetsTimeline`, `BookmarkFolderTimeline`
 
+`TweetResultByRestId` is also handled — it returns a single tweet (not a timeline) and is only processed when the tweet contains article data (long-form posts). This avoids duplicating tweets already captured from timeline endpoints.
+
 Unknown endpoints fall back to a recursive search for `instructions[]` arrays (max depth 5). Non-tweet endpoints are filtered in `background.js` via `IGNORED_ENDPOINTS`.
 
 ## Output Schema
@@ -133,12 +135,25 @@ Each JSONL line contains:
   "is_retweet": false,
   "retweeted_tweet_id": null,
   "is_subscriber_only": false,
+  "is_article": true,                   // only for long-form articles
+  "article": {                          // only for long-form articles
+    "title": "Article Title",
+    "text": "Rendered plain text with ![img](media/<id>/file.png) refs",
+    "blocks": [],                       // raw Draft.js content_state blocks
+    "media": [{
+      "id": "...",
+      "url": "https://pbs.twimg.com/...",
+      "filename": "image.png",
+      "local_path": "media/<tweet_id>/image.png",
+      "width": 1200, "height": 800
+    }]
+  },
   "source_endpoint": "HomeTimeline",
   "captured_at": "2024-01-01T00:00:00.000Z"
 }
 ```
 
-Notes: `media[].duration_ms` only present for videos. `views` may be `null`. For retweets, `text` contains the full original tweet text (not the truncated `RT @user:` form).
+Notes: `media[].duration_ms` only present for videos. `views` may be `null`. For retweets, `text` contains the full original tweet text (not the truncated `RT @user:` form). For articles, `is_article` and `article` are present — `article.text` is a markdown rendering with inline `![](media/<id>/file)` image refs, `article.blocks` preserves the raw Draft.js structure, and `article.media[]` lists images with CDN URLs and local paths (assuming `media/<tweet_id>/` layout). Article tweets bypass dedup so the enriched version (from `TweetResultByRestId`) replaces the stub captured from timeline endpoints.
 
 ## Known Issues
 
@@ -169,4 +184,4 @@ X sometimes returns `TimelineTweet` entries where `tweet_results.result` is miss
 - Keep it simple. No build tools, no frameworks, no dependencies beyond Python 3 stdlib.
 - Every change must maintain zero network footprint. This is the core promise.
 - Stealth constraints are non-negotiable — review the list above before submitting changes.
-- Update README.md if changing user-facing behavior.
+- **Update README.md and AGENTS.md after every relevant change** — new features, changed behavior, new config options, output format changes, new endpoints, architectural changes, etc. Both files must stay in sync with the code.

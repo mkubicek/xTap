@@ -51,7 +51,7 @@ def write_tweets(tweets, out_dir, seen_ids):
     with open(out_file, 'a') as f:
         for tweet in tweets:
             tid = tweet.get('id')
-            if tid and tid in seen_ids:
+            if tid and tid in seen_ids and not tweet.get('is_article'):
                 dupes += 1
                 continue
             if tid:
