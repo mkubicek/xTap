@@ -22,12 +22,21 @@ background.js (Service Worker, ES module)
   │  Parses tweet data via lib/tweet-parser.js
   │  Deduplicates (Set of seen IDs, max 50k, persisted to chrome.storage.local)
   │  Batches (50 tweets or 30–45s jittered flush)
-  │  Debug logging: intercepts console.log/warn/error, sends to native host
+  │  Debug logging: intercepts console.log/warn/error, sends to host
+  │  Transport abstraction: tries HTTP daemon first, falls back to native messaging
   ▼
-native-host/xtap_host.py (Python, stdio)
-  │  Receives batches via Chrome native messaging protocol
-  │  Per-message error handling (responds with error instead of crashing)
-  │  Handles tweet writes, debug log writes, and path validation tests
+┌─── HTTP transport (macOS) ──────────────────────────────────────┐
+│ xtap_daemon.py (127.0.0.1:17381, launchd)                      │
+│   Runs outside Chrome's process tree — has own TCC permissions  │
+│   Bearer token auth from ~/.xtap/secret                         │
+│   Endpoints: GET /status, POST /tweets, /log, /test-path        │
+└─────────────────────────────────────────────────────────────────┘
+┌─── Native messaging (fallback / Linux / Windows) ───────────────┐
+│ xtap_host.py (Python, stdio)                                    │
+│   Chrome native messaging protocol                              │
+│   Also serves GET_TOKEN to bootstrap HTTP transport              │
+└─────────────────────────────────────────────────────────────────┘
+  │  Both use shared logic from xtap_core.py
   ▼
 tweets-YYYY-MM-DD.jsonl  (daily rotation)
 debug-YYYY-MM-DD.log     (when debug logging enabled)
@@ -37,11 +46,13 @@ debug-YYYY-MM-DD.log     (when debug logging enabled)
 
 - **Two content scripts (MAIN + ISOLATED):** Chrome MV3 requires this split. MAIN world can patch browser APIs but can't use chrome.runtime. ISOLATED world bridges the gap.
 - **Random event channel:** The CustomEvent name is generated per page load (`'_' + Math.random().toString(36).slice(2)`) and passed via a `<meta>` tag that's immediately removed. Avoids predictable DOM markers.
-- **Native messaging for file I/O:** Chrome extensions can't write to arbitrary filesystem paths. The Python host handles all file writes via stdio-based native messaging.
-- **Dedup in service worker:** Multiple tabs feed the same service worker. `seenIds` Set (max 50,000, FIFO eviction) prevents duplicates. Persisted to `chrome.storage.local` across sessions. The native host also loads seen IDs from existing JSONL files on startup.
+- **Dual transport (HTTP + native messaging):** On macOS, a launchd-managed HTTP daemon (`xtap_daemon.py`) runs independently of Chrome's TCC sandbox, allowing writes to protected paths. The extension tries HTTP first, falls back to native messaging. On Linux/Windows, only native messaging is used.
+- **Token bootstrap:** On first run with the daemon installed, the extension connects to the native host once to request `GET_TOKEN`, which reads `~/.xtap/secret`. The token is cached in `chrome.storage.local` and used for subsequent HTTP requests. The native port is then disconnected.
+- **Shared core logic:** `xtap_core.py` contains all file I/O logic (load seen IDs, resolve output dir, write tweets/logs, test path), used by both `xtap_host.py` and `xtap_daemon.py`.
+- **Dedup in service worker:** Multiple tabs feed the same service worker. `seenIds` Set (max 50,000, FIFO eviction) prevents duplicates. Persisted to `chrome.storage.local` across sessions. Both host and daemon also load seen IDs from existing JSONL files on startup.
 - **Jittered flush:** Batch flush uses `setTimeout` with randomized interval (30s base + up to 50% jitter = 30–45s), re-randomized each cycle. Avoids clockwork-regular patterns.
-- **Path validation:** When the user sets a custom output directory, the service worker sends a `TEST_PATH` message to the native host, which attempts `makedirs` + write/delete of a temp file before accepting the path.
-- **Error resilience:** The native host wraps per-message handling in try/except and responds with `{ok: false, error: "..."}` instead of crashing. The service worker tracks rapid disconnects to detect crash loops.
+- **Path validation:** When the user sets a custom output directory, the service worker sends a `TEST_PATH` message (via HTTP or native), which attempts `makedirs` + write/delete of a temp file before accepting the path.
+- **Error resilience:** The native host wraps per-message handling in try/except and responds with `{ok: false, error: "..."}` instead of crashing. The HTTP daemon returns error status codes. The service worker tracks rapid disconnects to detect crash loops and auto-falls back from HTTP to native on failure.
 
 ## Stealth Constraints
 
@@ -52,7 +63,7 @@ debug-YYYY-MM-DD.log     (when debug logging enabled)
 3. **No expando properties** — XHR URL tracking uses a `WeakMap`, never attaches properties to instances.
 4. **No DOM footprint** — no injected elements, no visible page modifications. The only transient artifact is the `<meta name="__cfg">` tag, removed within milliseconds by the bridge script.
 5. **No console output in page context** — all logging happens in the service worker, which runs outside the page's JavaScript environment.
-6. **Minimal permissions** — only `storage` and `nativeMessaging`. Host permissions scoped to `x.com` and `twitter.com` only. No `webRequest`, no `tabs`, no `scripting`, no web-accessible resources.
+6. **Minimal permissions** — only `storage` and `nativeMessaging`. Host permissions scoped to `x.com`, `twitter.com`, and `127.0.0.1` (local daemon only). No `webRequest`, no `tabs`, no `scripting`, no web-accessible resources.
 7. **Random event channel** — per-page-load name, meta tag removed immediately after reading.
 8. **Only `open()` patched on XHR** — `send()` is not patched, so non-GraphQL XHR calls have clean stack traces.
 
@@ -62,20 +73,23 @@ debug-YYYY-MM-DD.log     (when debug logging enabled)
 
 ```
 xTap/
-├── manifest.json          # MV3 manifest (permissions: storage, nativeMessaging)
-├── background.js          # Service worker (ES module) - core logic
-├── content-main.js        # MAIN world - fetch/XHR patching
-├── content-bridge.js      # ISOLATED world - event relay
-├── popup.html/js/css      # Extension popup (stats, pause/resume, output dir, debug toggle)
-├── icons/                 # Extension icons (16, 48, 128)
+├── manifest.json              # MV3 manifest (permissions: storage, nativeMessaging)
+├── background.js              # Service worker (ES module) - transport, parsing, dedup
+├── content-main.js            # MAIN world - fetch/XHR patching
+├── content-bridge.js          # ISOLATED world - event relay
+├── popup.html/js/css          # Extension popup (stats, pause/resume, output dir, debug toggle)
+├── icons/                     # Extension icons (16, 48, 128)
 ├── lib/
-│   └── tweet-parser.js    # GraphQL response → normalized tweet objects
+│   └── tweet-parser.js        # GraphQL response → normalized tweet objects
 └── native-host/
-    ├── xtap_host.py       # Native messaging host (Python, stdio protocol)
-    ├── com.xtap.host.json # Native messaging host manifest
-    ├── install.sh         # macOS/Linux installer
-    ├── install.ps1        # Windows installer
-    └── xtap_host.bat      # Windows Python wrapper
+    ├── xtap_core.py           # Shared file I/O logic (used by host + daemon)
+    ├── xtap_host.py           # Native messaging host (Python, stdio protocol)
+    ├── xtap_daemon.py         # HTTP daemon (macOS, launchd, 127.0.0.1:17381)
+    ├── com.xtap.daemon.plist  # launchd plist template
+    ├── com.xtap.host.json     # Native messaging host manifest
+    ├── install.sh             # macOS/Linux installer (+ daemon on macOS)
+    ├── install.ps1            # Windows installer
+    └── xtap_host.bat          # Windows Python wrapper
 ```
 
 ## Supported Endpoints
@@ -130,9 +144,11 @@ Notes: `media[].duration_ms` only present for videos. `views` may be `null`. For
 
 ### macOS TCC (Transparency, Consent, and Control)
 
-The native host runs as a standalone `python3` process launched by Chrome via native messaging. It does not inherit Chrome's TCC permissions. Protected paths — iCloud Drive, `~/Documents`, `~/Desktop`, and others — will fail with `PermissionError`. `~/Downloads/xtap` is the safe default (no TCC required).
+On macOS, Chrome's native messaging host inherits Chrome's TCC sandbox. After Chrome restarts, writes to protected paths (`~/Documents`, iCloud Drive, etc.) can fail with `PermissionError`.
 
-The path validation feature catches this at save time: the popup shows an error if the native host can't write to the chosen directory.
+**Solution:** The HTTP daemon (`xtap_daemon.py`) runs via launchd, independent of Chrome's process tree. It has its own TCC entitlements and can write to protected paths after a one-time macOS permission prompt. The extension automatically uses the daemon when available, falling back to native messaging otherwise.
+
+If falling back to native messaging, `~/Downloads/xtap` is the safe default (no TCC required). The path validation feature catches permission errors at save time.
 
 ### Tombstone tweets
 
@@ -145,6 +161,8 @@ X sometimes returns `TimelineTweet` entries where `tweet_results.result` is miss
 - **Debugging:** Enable "Debug logging to file" in the popup. Logs write to `debug-YYYY-MM-DD.log` in the output directory. Service worker console is also visible at `chrome://extensions` → xTap → "Inspect views: service worker".
 - **tweet-parser.js** is the most fragile file — it handles multiple GraphQL response shapes and X changes their API schema without notice. The recursive fallback (`findInstructionsRecursive`) catches many new endpoint shapes automatically, but field-level changes to tweet objects will need manual updates to `normalizeTweet()`.
 - **Service worker module:** `background.js` is loaded as an ES module (`"type": "module"` in manifest). It imports `tweet-parser.js` directly.
+- **HTTP daemon (macOS):** `xtap_daemon.py` binds `127.0.0.1:17381`. Auth token stored at `~/.xtap/secret` (mode 600). Logs at `~/.xtap/daemon-stderr.log`. Manage with `launchctl`: `launchctl kickstart -k gui/$(id -u)/com.xtap.daemon` to restart, `launchctl bootout gui/$(id -u)/com.xtap.daemon` to stop.
+- **Transport debugging:** The popup shows "(HTTP daemon)" or "(Native host)" next to the status. Service worker console logs which transport was selected at startup.
 
 ## Contributing
 

@@ -5,6 +5,7 @@ const NATIVE_HOST = 'com.xtap.host';
 const BATCH_SIZE = 50;
 const FLUSH_INTERVAL_MS = 30_000;
 const MAX_SEEN_IDS = 50_000;
+const HTTP_TIMEOUT_MS = 10_000;
 
 let captureEnabled = true;
 let nativePort = null;
@@ -16,6 +17,12 @@ let allTimeCount = 0;
 let outputDir = '';
 let debugLogging = false;
 let logBuffer = [];
+
+// --- Transport state ---
+// 'http' | 'native' | 'none'
+let transport = 'none';
+let httpToken = null;
+let httpPort = null;
 
 // --- State persistence ---
 
@@ -52,6 +59,110 @@ function debugLog(level, args) {
 console.log = (...args) => { _origLog(...args); debugLog('LOG', args); };
 console.warn = (...args) => { _origWarn(...args); debugLog('WARN', args); };
 console.error = (...args) => { _origError(...args); debugLog('ERROR', args); };
+
+// --- HTTP transport ---
+
+async function httpFetch(method, path, body) {
+  const url = `http://127.0.0.1:${httpPort}${path}`;
+  const opts = { method, headers: {} };
+  if (httpToken) {
+    opts.headers['Authorization'] = `Bearer ${httpToken}`;
+  }
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+  opts.signal = controller.signal;
+  try {
+    const resp = await fetch(url, opts);
+    return await resp.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function probeHttp(port, token) {
+  try {
+    const resp = await fetch(`http://127.0.0.1:${port}/status`, {
+      signal: AbortSignal.timeout(3000)
+    });
+    const data = await resp.json();
+    return data.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+async function getTokenViaNative() {
+  return new Promise((resolve) => {
+    let port;
+    try {
+      port = chrome.runtime.connectNative(NATIVE_HOST);
+    } catch {
+      resolve(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      port.disconnect();
+      resolve(null);
+    }, 5000);
+    port.onMessage.addListener((msg) => {
+      clearTimeout(timer);
+      port.disconnect();
+      if (msg.ok && msg.token) {
+        resolve({ token: msg.token, port: msg.port });
+      } else {
+        resolve(null);
+      }
+    });
+    port.onDisconnect.addListener(() => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    port.postMessage({ type: 'GET_TOKEN' });
+  });
+}
+
+async function initTransport() {
+  // 1. Check cached token
+  const cached = await chrome.storage.local.get(['httpToken', 'httpPort']);
+  if (cached.httpToken && cached.httpPort) {
+    const alive = await probeHttp(cached.httpPort, cached.httpToken);
+    if (alive) {
+      httpToken = cached.httpToken;
+      httpPort = cached.httpPort;
+      transport = 'http';
+      console.log('[xTap] Using HTTP transport (cached token)');
+      return;
+    }
+  }
+
+  // 2. Try to get token from native host
+  const result = await getTokenViaNative();
+  if (result) {
+    const alive = await probeHttp(result.port, result.token);
+    if (alive) {
+      httpToken = result.token;
+      httpPort = result.port;
+      transport = 'http';
+      await chrome.storage.local.set({ httpToken, httpPort });
+      console.log('[xTap] Using HTTP transport (token from native host)');
+      return;
+    }
+  }
+
+  // 3. Fall back to native messaging
+  connectNative();
+  if (nativePort) {
+    transport = 'native';
+    console.log('[xTap] Using native messaging transport');
+  } else {
+    transport = 'none';
+    console.warn('[xTap] No transport available');
+  }
+}
 
 // --- Native messaging ---
 
@@ -90,45 +201,94 @@ function connectNative() {
   }
 }
 
+// --- Unified send ---
+
+async function sendToHost(msg) {
+  if (transport === 'http') {
+    try {
+      let path, body;
+      if (msg.type === 'TEST_PATH') {
+        path = '/test-path';
+        body = { outputDir: msg.outputDir };
+      } else if (msg.type === 'LOG') {
+        path = '/log';
+        body = { lines: msg.lines };
+        if (msg.outputDir) body.outputDir = msg.outputDir;
+      } else {
+        path = '/tweets';
+        body = { tweets: msg.tweets };
+        if (msg.outputDir) body.outputDir = msg.outputDir;
+      }
+      const resp = await httpFetch('POST', path, body);
+      return resp;
+    } catch (e) {
+      console.warn('[xTap] HTTP send failed, falling back to native:', e.message);
+      // Fall back to native
+      transport = 'native';
+      connectNative();
+      // Fall through to native send below
+    }
+  }
+
+  if (transport === 'native' || nativePort) {
+    if (!nativePort) connectNative();
+    if (nativePort) {
+      try {
+        nativePort.postMessage(msg);
+        return null; // native messaging is fire-and-forget for non-response messages
+      } catch (e) {
+        console.error('[xTap] Native send failed:', e);
+        nativePort = null;
+        return null;
+      }
+    }
+  }
+
+  console.warn('[xTap] No transport available, message dropped');
+  return null;
+}
+
 // --- Batching & flushing ---
 
 function scheduledFlush() {
   if (buffer.length > 0 || logBuffer.length > 0) flush();
 }
 
-function flushLogs() {
-  if (logBuffer.length === 0 || !nativePort) return;
+async function flushLogs() {
+  if (logBuffer.length === 0) return;
+  if (transport === 'none') return;
   const lines = logBuffer.splice(0);
-  try {
-    const message = { type: 'LOG', lines };
-    if (outputDir) message.outputDir = outputDir;
-    nativePort.postMessage(message);
-  } catch (e) {
-    _origError('[xTap] Log send failed:', e);
-  }
+  const message = { type: 'LOG', lines };
+  if (outputDir) message.outputDir = outputDir;
+  await sendToHost(message);
 }
 
-function flush() {
+async function flush() {
   if (buffer.length === 0 && logBuffer.length === 0) return;
 
-  if (!nativePort) connectNative();
+  if (transport === 'none') {
+    // Try to establish a transport
+    connectNative();
+    if (nativePort) transport = 'native';
+  }
 
-  if (buffer.length > 0 && nativePort) {
+  if (buffer.length > 0) {
     const batch = buffer.splice(0);
+    const message = { tweets: batch };
+    if (outputDir) message.outputDir = outputDir;
+
     try {
-      const message = { tweets: batch };
-      if (outputDir) message.outputDir = outputDir;
-      nativePort.postMessage(message);
+      const resp = await sendToHost(message);
+      if (resp && !resp.ok) {
+        console.error('[xTap] Host rejected tweets:', resp.error);
+      }
     } catch (e) {
       console.error('[xTap] Send failed, buffering tweets back:', e);
       buffer.unshift(...batch);
-      nativePort = null;
     }
-  } else if (buffer.length > 0) {
-    console.warn('[xTap] No native host connection, tweets buffered:', buffer.length);
   }
 
-  if (debugLogging) flushLogs();
+  if (debugLogging) await flushLogs();
 }
 
 function enqueueTweets(tweets) {
@@ -209,10 +369,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       captureEnabled,
       sessionCount,
       allTimeCount,
-      connected: nativePort !== null,
+      connected: transport !== 'none',
       buffered: buffer.length,
       outputDir,
-      debugLogging
+      debugLogging,
+      transport
     });
     return true;
   }
@@ -231,21 +392,41 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === 'SET_OUTPUT_DIR') {
     const newDir = msg.outputDir || '';
-    if (newDir && nativePort) {
-      // Ask native host to test-write before accepting
-      const listener = (resp) => {
-        if (resp.type !== 'TEST_PATH') return;
-        nativePort.onMessage.removeListener(listener);
-        if (resp.ok) {
-          outputDir = newDir;
-          chrome.storage.local.set({ outputDir });
-          sendResponse({ outputDir });
+    if (newDir && transport !== 'none') {
+      sendToHost({ type: 'TEST_PATH', outputDir: newDir }).then((resp) => {
+        if (transport === 'http' && resp) {
+          // HTTP transport returns response directly
+          if (resp.ok) {
+            outputDir = newDir;
+            chrome.storage.local.set({ outputDir });
+            sendResponse({ outputDir });
+          } else {
+            sendResponse({ error: resp.error || 'Cannot write to that directory' });
+          }
+        } else if (transport === 'native') {
+          // Native transport: set up listener for response
+          const listener = (nativeResp) => {
+            if (nativeResp.type !== 'TEST_PATH') return;
+            nativePort.onMessage.removeListener(listener);
+            if (nativeResp.ok) {
+              outputDir = newDir;
+              chrome.storage.local.set({ outputDir });
+              sendResponse({ outputDir });
+            } else {
+              sendResponse({ error: nativeResp.error || 'Cannot write to that directory' });
+            }
+          };
+          if (nativePort) {
+            nativePort.onMessage.addListener(listener);
+          } else {
+            sendResponse({ error: 'No transport available' });
+          }
         } else {
-          sendResponse({ error: resp.error || 'Cannot write to that directory' });
+          sendResponse({ error: 'No transport available' });
         }
-      };
-      nativePort.onMessage.addListener(listener);
-      nativePort.postMessage({ type: 'TEST_PATH', outputDir: newDir });
+      }).catch((e) => {
+        sendResponse({ error: e.message });
+      });
     } else {
       outputDir = newDir;
       chrome.storage.local.set({ outputDir });
@@ -264,9 +445,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 // --- Init ---
 
-restoreState().then(() => {
+restoreState().then(async () => {
   updateBadge();
-  connectNative();
+  await initTransport();
   function scheduleNextFlush() {
     const jitter = Math.random() * FLUSH_INTERVAL_MS * 0.5;
     flushTimer = setTimeout(() => { scheduledFlush(); scheduleNextFlush(); }, FLUSH_INTERVAL_MS + jitter);

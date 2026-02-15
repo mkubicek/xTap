@@ -11,10 +11,11 @@ function render(state) {
   alltimeEl.textContent = state.allTimeCount.toLocaleString();
 
   if (state.connected) {
-    statusEl.textContent = 'Saving to disk';
+    const mode = state.transport === 'http' ? ' (HTTP daemon)' : ' (Native host)';
+    statusEl.textContent = 'Saving to disk' + mode;
     statusEl.className = 'status connected';
   } else {
-    statusEl.textContent = 'Native host not connected';
+    statusEl.textContent = 'Not connected';
     statusEl.className = 'status disconnected';
   }
 

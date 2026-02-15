@@ -58,22 +58,26 @@ xTap is a Chrome extension that silently intercepts the GraphQL API responses X/
      ┌────────────────────────────┐
      │     background.js          │  Service worker
      │   parse, dedup, batch      │
-     └──────────────┬─────────────┘
-                    │ native messaging
-                    ▼
-     ┌────────────────────────────┐
-     │     xtap_host.py           │  Python
-     │     append JSONL           │
-     └──────────────┬─────────────┘
-                    │
-                    ▼
+     └──────────┬─────────┬───────┘
+                │         │
+          HTTP  │         │ native messaging
+       (macOS)  │         │ (fallback / Linux / Windows)
+                ▼         ▼
+     ┌──────────────┐  ┌──────────────┐
+     │ xtap_daemon  │  │ xtap_host.py │
+     │ (launchd)    │  │ (stdio)      │
+     └──────┬───────┘  └──────┬───────┘
+            │                 │
+            ▼                 ▼
        tweets-YYYY-MM-DD.jsonl
 ```
 
 1. A MAIN world content script patches `fetch` and `XMLHttpRequest.open()` to observe GraphQL responses as they arrive
 2. Payloads are relayed via a random-named `CustomEvent` to an ISOLATED world bridge, which forwards them to the service worker
 3. The service worker parses, normalizes, deduplicates, and batches tweets
-4. Batches are sent over Chrome native messaging to a Python host that appends each tweet as a JSON line to a daily file (`tweets-2026-02-14.jsonl`)
+4. Batches are sent to disk via one of two transports:
+   - **HTTP daemon** (macOS): a standalone `xtap_daemon.py` process running via launchd on `127.0.0.1:17381`, with its own TCC entitlements — can write to `~/Documents`, iCloud Drive, and other protected paths
+   - **Native messaging** (fallback / Linux / Windows): the existing `xtap_host.py` over Chrome's stdio protocol
 
 ## Is This Safe to Use?
 
@@ -93,7 +97,7 @@ Even though passive interception is inherently low-risk, xTap avoids leaving unn
 - **Random event channel** — the MAIN↔ISOLATED world bridge uses a `CustomEvent` with a per-page-load random name; the `<meta>` beacon that communicates the name is removed immediately after the bridge reads it
 - **Zero DOM footprint** — no injected UI, no page modifications; everything lives in the popup and service worker
 - **Zero console output in page context** — all logging happens in the service worker and parser, which run outside the page's JavaScript environment
-- **Minimal permissions** — only `storage` and `nativeMessaging`; no `webRequest`, no host permissions beyond `x.com` / `twitter.com`
+- **Minimal permissions** — only `storage` and `nativeMessaging`; no `webRequest`, no host permissions beyond `x.com` / `twitter.com` / `127.0.0.1`
 - **Jittered flush timing** — batches are flushed on a randomized interval to avoid a clockwork-regular pattern
 
 These measures don't make detection impossible — a determined page script could still compare prototype references or probe for patched behavior — but they avoid the low-hanging signals that fingerprinting scripts typically check. More importantly, there's nothing to detect server-side because xTap generates zero network activity of its own.
@@ -115,10 +119,24 @@ These measures don't make detection impossible — a determined page script coul
 3. Click **Load unpacked** and select the `xtap/` directory
 4. Copy the **extension ID** shown on the card
 
-### 2. Install the native messaging host
+### 2. Install the native host
 
 <details>
-<summary><strong>macOS / Linux</strong></summary>
+<summary><strong>macOS</strong></summary>
+
+```bash
+cd native-host
+./install.sh <your-extension-id>
+```
+
+This installs both the native messaging host and an HTTP daemon (`xtap_daemon.py`) that runs via launchd. The daemon runs independently of Chrome's process tree and has its own TCC permissions, so it can write to protected paths like `~/Documents` and iCloud Drive.
+
+The extension automatically detects the daemon and uses it as the primary transport, falling back to native messaging if unavailable.
+
+</details>
+
+<details>
+<summary><strong>Linux</strong></summary>
 
 ```bash
 cd native-host
@@ -141,6 +159,8 @@ cd native-host
 
 Open [x.com](https://x.com) and browse normally. The badge counter on the extension icon shows how many tweets have been captured this session. Click the icon to see stats and pause/resume capture.
 
+> **After updating the extension:** If you reload xTap at `chrome://extensions`, you must also hard-reload any open X tabs (`Cmd+Shift+R` / `Ctrl+Shift+R`). The content scripts that intercept API responses are injected at page load — stale scripts from before the update won't connect to the new service worker.
+
 ## Configuration
 
 ### Output directory
@@ -159,7 +179,7 @@ export XTAP_OUTPUT_DIR="$HOME/Documents/xtap-data"
 | `XTAP_OUTPUT_DIR` env var | `~/Downloads/xtap` | Fallback when no popup setting is configured |
 | Debug logging toggle | Off | Writes service worker logs to `debug-YYYY-MM-DD.log` in the output directory |
 
-> **macOS note:** The native host runs as a standalone `python3` process, which does not inherit Chrome's TCC permissions. Protected paths — including iCloud Drive, `~/Documents`, `~/Desktop`, and others — will fail with a permission error. `~/Downloads` is the safe default as it's writable without TCC approval.
+> **macOS note:** On macOS, the HTTP daemon (installed via `install.sh`) runs outside Chrome's TCC sandbox and can write to protected paths like `~/Documents` and iCloud Drive after a one-time macOS permission prompt. If the daemon is unavailable and the extension falls back to native messaging, protected paths will fail with a permission error — `~/Downloads` is the safe default in that case.
 
 ## Output Format
 
@@ -207,18 +227,21 @@ Output is written to daily files (`tweets-YYYY-MM-DD.jsonl`). Each line is a sel
 
 ```
 xTap/
-├── manifest.json          # Chrome MV3 extension manifest
-├── background.js          # Service worker — parsing, dedup, native messaging
-├── content-main.js        # MAIN world — patches fetch/XHR, emits events
-├── content-bridge.js      # ISOLATED world — relays events to service worker
-├── popup.html/js/css      # Extension popup UI
-├── icons/                 # Extension icons
-├── lib/                   # Shared utilities
+├── manifest.json              # Chrome MV3 extension manifest
+├── background.js              # Service worker — parsing, dedup, transport
+├── content-main.js            # MAIN world — patches fetch/XHR, emits events
+├── content-bridge.js          # ISOLATED world — relays events to service worker
+├── popup.html/js/css          # Extension popup UI
+├── icons/                     # Extension icons
+├── lib/                       # Shared utilities
 └── native-host/
-    ├── xtap_host.py       # Native messaging host (Python)
-    ├── install.sh         # Installer for macOS / Linux
-    ├── install.ps1        # Installer for Windows
-    └── xtap_host.bat      # Windows Python wrapper
+    ├── xtap_core.py           # Shared file I/O logic
+    ├── xtap_host.py           # Native messaging host (Python, stdio)
+    ├── xtap_daemon.py         # HTTP daemon (macOS, launchd)
+    ├── com.xtap.daemon.plist  # launchd plist template
+    ├── install.sh             # Installer for macOS / Linux
+    ├── install.ps1            # Installer for Windows
+    └── xtap_host.bat          # Windows Python wrapper
 ```
 
 ## License

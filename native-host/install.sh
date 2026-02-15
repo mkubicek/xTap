@@ -1,5 +1,5 @@
 #!/bin/bash
-# xTap — installer for the native messaging host (macOS / Linux).
+# xTap — installer for the native messaging host and HTTP daemon (macOS / Linux).
 # Usage: ./install.sh <chrome-extension-id>
 
 set -euo pipefail
@@ -31,7 +31,8 @@ esac
 MANIFEST_PATH="${TARGET_DIR}/${HOST_NAME}.json"
 
 # Verify python3
-if ! command -v python3 &> /dev/null; then
+PYTHON_PATH="$(command -v python3 2>/dev/null || true)"
+if [ -z "$PYTHON_PATH" ]; then
   echo "Error: python3 is required but not found in PATH"
   exit 1
 fi
@@ -42,7 +43,7 @@ chmod +x "$HOST_PATH"
 # Create target directory
 mkdir -p "$TARGET_DIR"
 
-# Write manifest
+# Write native messaging manifest
 cat > "$MANIFEST_PATH" <<EOF
 {
   "name": "${HOST_NAME}",
@@ -58,6 +59,53 @@ echo "  $MANIFEST_PATH"
 echo ""
 echo "Host script: $HOST_PATH"
 echo "Extension ID: $EXT_ID"
+
+# --- macOS: install HTTP daemon via launchd ---
+if [ "$OS" = "Darwin" ]; then
+  DAEMON_PATH="${SCRIPT_DIR}/xtap_daemon.py"
+  XTAP_DIR="$HOME/.xtap"
+  XTAP_SECRET="${XTAP_DIR}/secret"
+  PLIST_LABEL="com.xtap.daemon"
+  PLIST_DEST="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
+  PLIST_TEMPLATE="${SCRIPT_DIR}/com.xtap.daemon.plist"
+
+  chmod +x "$DAEMON_PATH"
+
+  # Create ~/.xtap/ with restricted permissions
+  mkdir -p "$XTAP_DIR"
+  chmod 700 "$XTAP_DIR"
+
+  # Generate auth token if not exists
+  if [ ! -f "$XTAP_SECRET" ]; then
+    python3 -c "import secrets; print(secrets.token_urlsafe(32))" > "$XTAP_SECRET"
+    chmod 600 "$XTAP_SECRET"
+    echo "Generated auth token: $XTAP_SECRET"
+  else
+    echo "Auth token already exists: $XTAP_SECRET"
+  fi
+
+  # Unload existing daemon if loaded (ignore errors)
+  launchctl bootout "gui/$(id -u)/${PLIST_LABEL}" 2>/dev/null || true
+
+  # Substitute plist template
+  mkdir -p "$HOME/Library/LaunchAgents"
+  sed \
+    -e "s|__PYTHON_PATH__|${PYTHON_PATH}|g" \
+    -e "s|__DAEMON_PATH__|${DAEMON_PATH}|g" \
+    -e "s|__HOME_DIR__|${HOME}|g" \
+    "$PLIST_TEMPLATE" > "$PLIST_DEST"
+
+  # Load daemon
+  launchctl bootstrap "gui/$(id -u)" "$PLIST_DEST"
+
+  echo ""
+  echo "HTTP daemon installed:"
+  echo "  Plist: $PLIST_DEST"
+  echo "  Daemon: $DAEMON_PATH"
+  echo "  Listening on: 127.0.0.1:17381"
+  echo "  Logs: ${XTAP_DIR}/daemon-stderr.log"
+fi
+
 echo ""
 echo "Output directory (set XTAP_OUTPUT_DIR to change):"
 echo "  ${XTAP_OUTPUT_DIR:-$HOME/Downloads/xtap}"

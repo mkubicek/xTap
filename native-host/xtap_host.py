@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """xTap Native Messaging Host — receives tweets from the Chrome extension and appends to JSONL."""
 
-import glob
 import json
 import os
 import struct
 import sys
-from datetime import date
 
-OUTPUT_DIR = os.environ.get('XTAP_OUTPUT_DIR', os.path.expanduser('~/Downloads/xtap'))
+from xtap_core import DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir, write_tweets, write_log, test_path
+
+XTAP_PORT = 17381
+XTAP_DIR = os.path.expanduser('~/.xtap')
+XTAP_SECRET = os.path.join(XTAP_DIR, 'secret')
 
 
 def read_message():
@@ -27,27 +29,11 @@ def send_message(msg):
     sys.stdout.buffer.flush()
 
 
-def load_seen_ids(out_dir):
-    """Build a set of tweet IDs from all existing JSONL files in the output directory."""
-    seen = set()
-    for path in glob.glob(os.path.join(out_dir, 'tweets-*.jsonl')):
-        with open(path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    tweet_id = json.loads(line).get('id')
-                    if tweet_id:
-                        seen.add(tweet_id)
-                except (json.JSONDecodeError, KeyError):
-                    continue
-    return seen
-
-
 def main():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    seen_ids = load_seen_ids(OUTPUT_DIR)
+    out_dir = DEFAULT_OUTPUT_DIR
+    os.makedirs(out_dir, exist_ok=True)
+    seen_ids = load_seen_ids(out_dir)
+    custom_dirs = set()
 
     while True:
         msg = read_message()
@@ -55,60 +41,42 @@ def main():
             break
 
         try:
-            _handle_message(msg, seen_ids)
+            _handle_message(msg, out_dir, seen_ids, custom_dirs)
         except Exception as e:
             send_message({'ok': False, 'error': str(e)})
 
 
-def _handle_message(msg, seen_ids):
+def _handle_message(msg, default_dir, seen_ids, custom_dirs):
+    # Handle GET_TOKEN: return daemon auth token for HTTP transport bootstrap
+    if msg.get('type') == 'GET_TOKEN':
+        try:
+            with open(XTAP_SECRET, 'r') as f:
+                token = f.read().strip()
+            send_message({'ok': True, 'token': token, 'port': XTAP_PORT})
+        except FileNotFoundError:
+            send_message({'ok': False, 'error': 'Daemon not installed (~/.xtap/secret not found)'})
+        return
+
     # Resolve output directory
     msg_dir = msg.get('outputDir', '').strip()
-    if msg_dir:
-        out_dir = os.path.expanduser(msg_dir)
-        os.makedirs(out_dir, exist_ok=True)
-        if out_dir != OUTPUT_DIR and not hasattr(_handle_message, '_custom_dirs'):
-            _handle_message._custom_dirs = set()
-        if out_dir != OUTPUT_DIR and out_dir not in getattr(_handle_message, '_custom_dirs', set()):
-            seen_ids.update(load_seen_ids(out_dir))
-            _handle_message._custom_dirs.add(out_dir)
-    else:
-        out_dir = OUTPUT_DIR
+    out_dir = resolve_output_dir(msg_dir, default_dir, seen_ids, custom_dirs)
 
     # Handle path test
     if msg.get('type') == 'TEST_PATH':
-        test_file = os.path.join(out_dir, '.xtap-write-test')
-        with open(test_file, 'w') as f:
-            f.write('ok')
-        os.remove(test_file)
+        test_path(out_dir)
         send_message({'ok': True, 'type': 'TEST_PATH'})
         return
 
     # Handle log messages
     if msg.get('type') == 'LOG':
-        log_file = os.path.join(out_dir, f'debug-{date.today().isoformat()}.log')
-        with open(log_file, 'a') as f:
-            for line in msg.get('lines', []):
-                f.write(line + '\n')
-        send_message({'ok': True, 'logged': len(msg.get('lines', []))})
+        lines = msg.get('lines', [])
+        logged = write_log(lines, out_dir)
+        send_message({'ok': True, 'logged': logged})
         return
 
     # Handle tweet messages
     tweets = msg.get('tweets', [])
-    out_file = os.path.join(out_dir, f'tweets-{date.today().isoformat()}.jsonl')
-
-    count = 0
-    dupes = 0
-    with open(out_file, 'a') as f:
-        for tweet in tweets:
-            tid = tweet.get('id')
-            if tid and tid in seen_ids:
-                dupes += 1
-                continue
-            if tid:
-                seen_ids.add(tid)
-            f.write(json.dumps(tweet, ensure_ascii=False) + '\n')
-            count += 1
-
+    count, dupes = write_tweets(tweets, out_dir, seen_ids)
     send_message({'ok': True, 'count': count, 'dupes': dupes})
 
 
