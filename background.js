@@ -18,6 +18,8 @@ let outputDir = '';
 let debugLogging = false;
 let verboseLogging = false;
 let logBuffer = [];
+let readyResolve;
+const ready = new Promise(r => { readyResolve = r; });
 
 // --- Transport state ---
 // 'http' | 'native' | 'none'
@@ -410,42 +412,48 @@ const IGNORED_ENDPOINTS = new Set([
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'GRAPHQL_RESPONSE') {
-    verboseLog(msg.endpoint, msg.data);
-    if (!captureEnabled) return;
-    if (IGNORED_ENDPOINTS.has(msg.endpoint)) {
-      if (verboseLogging) console.log(`[xTap:verbose] ${msg.endpoint} (ignored)`);
-      return;
-    }
-    try {
-      const tweets = extractTweets(msg.endpoint, msg.data);
-      for (const t of tweets) t.source_endpoint = msg.endpoint;
-      if (tweets.length > 0) {
-        const missingAuthor = tweets.filter(t => !t.author?.username).length;
-        const missingText = tweets.filter(t => !t.text).length;
-        let warn = '';
-        if (missingAuthor > 0) warn += ` | ${missingAuthor} missing username`;
-        if (missingText > 0) warn += ` | ${missingText} missing text`;
-        console.log(`[xTap] ${msg.endpoint}: ${tweets.length} tweets${warn}`);
-        enqueueTweets(tweets);
+    (async () => {
+      await ready;
+      verboseLog(msg.endpoint, msg.data);
+      if (!captureEnabled) return;
+      if (IGNORED_ENDPOINTS.has(msg.endpoint)) {
+        if (verboseLogging) console.log(`[xTap:verbose] ${msg.endpoint} (ignored)`);
+        return;
       }
-    } catch (e) {
-      console.error(`[xTap] Parse error for ${msg.endpoint}:`, e, '| data keys:', Object.keys(msg.data || {}).join(', '));
-    }
+      try {
+        const tweets = extractTweets(msg.endpoint, msg.data);
+        for (const t of tweets) t.source_endpoint = msg.endpoint;
+        if (tweets.length > 0) {
+          const missingAuthor = tweets.filter(t => !t.author?.username).length;
+          const missingText = tweets.filter(t => !t.text).length;
+          let warn = '';
+          if (missingAuthor > 0) warn += ` | ${missingAuthor} missing username`;
+          if (missingText > 0) warn += ` | ${missingText} missing text`;
+          console.log(`[xTap] ${msg.endpoint}: ${tweets.length} tweets${warn}`);
+          enqueueTweets(tweets);
+        }
+      } catch (e) {
+        console.error(`[xTap] Parse error for ${msg.endpoint}:`, e, '| data keys:', Object.keys(msg.data || {}).join(', '));
+      }
+    })();
     return;
   }
 
   if (msg.type === 'GET_STATUS') {
-    sendResponse({
-      captureEnabled,
-      sessionCount,
-      allTimeCount,
-      connected: transport !== 'none',
-      buffered: buffer.length,
-      outputDir,
-      debugLogging,
-      verboseLogging,
-      transport
-    });
+    (async () => {
+      await ready;
+      sendResponse({
+        captureEnabled,
+        sessionCount,
+        allTimeCount,
+        connected: transport !== 'none',
+        buffered: buffer.length,
+        outputDir,
+        debugLogging,
+        verboseLogging,
+        transport
+      });
+    })();
     return true;
   }
 
@@ -525,6 +533,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // --- Init ---
 
 restoreState().then(async () => {
+  readyResolve();
   updateBadge();
   await initTransport();
   function scheduleNextFlush() {
