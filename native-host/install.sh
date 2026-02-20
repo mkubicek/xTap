@@ -4,6 +4,11 @@
 
 set -euo pipefail
 
+if [ "$(id -u)" -eq 0 ]; then
+  echo "Error: Do not run this script with sudo. It installs to user-level paths."
+  exit 1
+fi
+
 if [ $# -lt 1 ]; then
   echo "Usage: $0 <chrome-extension-id>"
   echo "  Find your extension ID at chrome://extensions (enable Developer mode)"
@@ -86,6 +91,14 @@ if [ "$OS" = "Darwin" ]; then
 
   # Unload existing daemon if loaded (ignore errors)
   launchctl bootout "gui/$(id -u)/${PLIST_LABEL}" 2>/dev/null || true
+  # Wait for the service to fully unload before re-bootstrapping
+  for i in 1 2 3 4 5; do
+    launchctl print "gui/$(id -u)/${PLIST_LABEL}" 2>/dev/null || break
+    sleep 0.5
+  done
+
+  # Capture user's PATH so the daemon can find yt-dlp and other tools
+  USER_PATH="$PATH"
 
   # Substitute plist template
   mkdir -p "$HOME/Library/LaunchAgents"
@@ -93,6 +106,7 @@ if [ "$OS" = "Darwin" ]; then
     -e "s|__PYTHON_PATH__|${PYTHON_PATH}|g" \
     -e "s|__DAEMON_PATH__|${DAEMON_PATH}|g" \
     -e "s|__HOME_DIR__|${HOME}|g" \
+    -e "s|__PATH__|${USER_PATH}|g" \
     "$PLIST_TEMPLATE" > "$PLIST_DEST"
 
   # Load daemon

@@ -19,6 +19,16 @@
       </div>
     </div>
     <button id="toggle"></button>
+    <div id="video-section" class="video-section" style="display: none;">
+      <div class="video-info">
+        <span id="video-label"></span>
+      </div>
+      <div id="ytdlp-hint" class="ytdlp-hint" style="display: none;">
+        Install <a href="https://github.com/yt-dlp/yt-dlp#installation" target="_blank">yt-dlp</a> for best quality
+      </div>
+      <div class="video-warning">Not stealth — downloads make extra requests to X</div>
+      <button id="download-btn" class="download-btn"></button>
+    </div>
     <div class="settings">
       <label class="settings-label" for="output-dir">Output directory</label>
       <div class="settings-row">

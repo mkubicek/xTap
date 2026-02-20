@@ -3,6 +3,12 @@
 import glob
 import json
 import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import urllib.request
 from datetime import date
 
 
@@ -85,3 +91,141 @@ def test_path(out_dir):
     with open(test_file, 'w') as f:
         f.write('ok')
     os.remove(test_file)
+
+
+# --- Video download ---
+
+_ytdlp_path = None
+_ytdlp_checked = False
+_downloads = {}
+
+
+def check_ytdlp():
+    """Check if yt-dlp is available on PATH. Cached after first call."""
+    global _ytdlp_path, _ytdlp_checked
+    if not _ytdlp_checked:
+        _ytdlp_path = shutil.which('yt-dlp')
+        _ytdlp_checked = True
+    return _ytdlp_path is not None
+
+
+def get_download_status(download_id):
+    """Return current state of a download."""
+    info = _downloads.get(download_id)
+    if not info:
+        return {'status': 'unknown'}
+    return {
+        'status': info['status'],
+        'progress': info.get('progress'),
+        'path': info.get('path'),
+        'error': info.get('error'),
+    }
+
+
+def _date_prefix(post_date):
+    """Convert ISO date string to yyyy.mm.dd prefix, or empty string on failure."""
+    if not post_date:
+        return ''
+    try:
+        # Handle both "2024-01-15T12:34:56.000Z" and "2024-01-15"
+        dt = post_date[:10].replace('-', '.')
+        return dt + '_'
+    except Exception:
+        return ''
+
+
+def download_direct(direct_url, tweet_id, video_dir, post_date=''):
+    """Download video via direct CDN URL. Returns the file path."""
+    os.makedirs(video_dir, exist_ok=True)
+    prefix = _date_prefix(post_date)
+    filename = f'{prefix}{tweet_id}.mp4'
+    filepath = os.path.join(video_dir, filename)
+    urllib.request.urlretrieve(direct_url, filepath)
+    return filepath
+
+
+def start_download(download_id, tweet_url, direct_url, out_dir, post_date=''):
+    """Start a background download. Returns immediately; poll get_download_status()."""
+    video_dir = os.path.join(out_dir, 'videos')
+    os.makedirs(video_dir, exist_ok=True)
+
+    _downloads[download_id] = {
+        'status': 'downloading',
+        'progress': None,
+        'path': None,
+        'error': None,
+    }
+
+    def run():
+        try:
+            if check_ytdlp():
+                _download_with_ytdlp(download_id, tweet_url, video_dir, post_date)
+            elif direct_url:
+                _downloads[download_id]['progress'] = 0
+                # Extract tweet ID from URL
+                m = re.search(r'/status/(\d+)', tweet_url)
+                tweet_id = m.group(1) if m else download_id
+                path = download_direct(direct_url, tweet_id, video_dir, post_date)
+                _downloads[download_id]['progress'] = 100
+                _downloads[download_id]['status'] = 'done'
+                _downloads[download_id]['path'] = path
+            else:
+                _downloads[download_id]['status'] = 'error'
+                _downloads[download_id]['error'] = 'yt-dlp not found and no direct URL available'
+        except Exception as e:
+            _downloads[download_id]['status'] = 'error'
+            _downloads[download_id]['error'] = str(e)
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+
+
+def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):
+    """Download using yt-dlp with progress parsing."""
+    prefix = _date_prefix(post_date)
+    output_template = os.path.join(video_dir, prefix + '%(title)s [%(id)s].%(ext)s')
+    cmd = [
+        _ytdlp_path,
+        '--newline', '--progress',
+        '--cookies-from-browser', 'chrome',
+        '-o', output_template,
+        tweet_url,
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    progress_re = re.compile(r'(\d+\.?\d*)%')
+    final_path = None
+    last_lines = []
+    for line in proc.stdout:
+        line = line.strip()
+        if line:
+            last_lines.append(line)
+            if len(last_lines) > 20:
+                last_lines.pop(0)
+            print(f'[yt-dlp] {line}', file=sys.stderr)
+        # Parse progress percentage
+        m = progress_re.search(line)
+        if m:
+            _downloads[download_id]['progress'] = float(m.group(1))
+        # Capture output filename from [download] or [Merger] lines
+        if 'Destination:' in line:
+            final_path = line.split('Destination:', 1)[1].strip()
+        elif 'has already been downloaded' in line:
+            # "[download] <path> has already been downloaded"
+            part = line.split(']', 1)[1].strip() if ']' in line else line
+            final_path = part.replace(' has already been downloaded', '').strip()
+        elif '[Merger]' in line and 'Merging formats into' in line:
+            final_path = line.split('Merging formats into "', 1)[1].rstrip('"').strip() if '"' in line else final_path
+    proc.wait()
+    if proc.returncode != 0:
+        # Include yt-dlp's error output in the exception
+        error_lines = [l for l in last_lines if 'ERROR' in l]
+        detail = error_lines[-1] if error_lines else (last_lines[-1] if last_lines else '')
+        raise RuntimeError(f'yt-dlp failed: {detail}' if detail else f'yt-dlp exited with code {proc.returncode}')
+    _downloads[download_id]['progress'] = 100
+    _downloads[download_id]['status'] = 'done'
+    _downloads[download_id]['path'] = final_path

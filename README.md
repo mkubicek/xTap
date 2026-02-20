@@ -32,6 +32,7 @@ xTap is a Chrome extension that silently intercepts the GraphQL API responses X/
 - **Zero footprint** — no additional network requests; captures what Chrome already receives
 - **Structured output** — each tweet saved as a clean JSON object with author, metrics, media, and more
 - **Article support** — long-form X articles are captured with full text, inline image references, and Draft.js block structure
+- **Video download** (macOS) — download videos from tweets using yt-dlp (or direct MP4 fallback) via the extension popup. Requires the HTTP daemon. **Note:** unlike passive capture, video downloads make additional network requests to X and are not stealth.
 - **Pause / resume** — click the extension icon to toggle capture on the fly
 - **Live counter** — badge on the extension icon shows tweets captured this session
 - **Multi-tab aware** — multiple X tabs feed into the same service worker with shared deduplication
@@ -112,6 +113,7 @@ These measures don't make detection impossible — a determined page script coul
 | **Browser** | Google Chrome |
 | **Runtime** | Python 3 |
 | **OS** | macOS, Linux, or Windows |
+| [`yt-dlp`](https://github.com/yt-dlp/yt-dlp#installation) (optional) | For best-quality video downloads |
 
 ### 1. Load the extension
 
@@ -130,7 +132,7 @@ cd native-host
 ./install.sh <your-extension-id>
 ```
 
-This installs both the native messaging host and an HTTP daemon (`xtap_daemon.py`) that runs via launchd. The daemon runs independently of Chrome's process tree and has its own TCC permissions, so it can write to protected paths like `~/Documents` and iCloud Drive.
+This installs both the native messaging host and an HTTP daemon (`xtap_daemon.py`) that runs via launchd. The daemon runs independently of Chrome's process tree and has its own TCC permissions, so it can write to protected paths like `~/Documents` and iCloud Drive. The installer captures your current `PATH` so the daemon can find tools like `yt-dlp`.
 
 The extension automatically detects the daemon and uses it as the primary transport, falling back to native messaging if unavailable.
 
@@ -161,6 +163,15 @@ cd native-host
 Open [x.com](https://x.com) and browse normally. The badge counter on the extension icon shows how many tweets have been captured this session. Click the icon to see stats and pause/resume capture.
 
 > **After updating the extension:** If you reload xTap at `chrome://extensions`, you must also hard-reload any open X tabs (`Cmd+Shift+R` / `Ctrl+Shift+R`). The content scripts that intercept API responses are injected at page load — stale scripts from before the update won't connect to the new service worker.
+
+### Upgrading from a previous version
+
+After updating the extension files:
+1. Re-run `install.sh` — this is needed to update the daemon's PATH (required for yt-dlp support) and pick up new Python code
+2. Reload the extension at `chrome://extensions`
+3. Hard-reload any open X tabs (`Cmd+Shift+R`)
+
+If you previously installed xTap before v0.13.0, re-running `install.sh` is **required** for video download support — the daemon needs an updated launchd configuration to find yt-dlp on your PATH.
 
 ## Configuration
 

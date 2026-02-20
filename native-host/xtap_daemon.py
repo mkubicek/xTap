@@ -5,9 +5,12 @@ import json
 import os
 import signal
 import sys
+import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-from xtap_core import DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir, write_tweets, write_log, write_dump, test_path
+from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
+                       write_tweets, write_log, write_dump, test_path,
+                       check_ytdlp, start_download, get_download_status)
 
 VERSION = '0.12.0'
 BIND_HOST = '127.0.0.1'
@@ -81,6 +84,12 @@ class DaemonHandler(BaseHTTPRequestHandler):
             self._handle_dump(body)
         elif self.path == '/test-path':
             self._handle_test_path(body)
+        elif self.path == '/check-ytdlp':
+            self._handle_check_ytdlp(body)
+        elif self.path == '/download-video':
+            self._handle_download_video(body)
+        elif self.path == '/download-status':
+            self._handle_download_status(body)
         else:
             self._send_json({'ok': False, 'error': 'Not found'}, 404)
 
@@ -126,6 +135,28 @@ class DaemonHandler(BaseHTTPRequestHandler):
             self._send_json({'ok': True, 'type': 'TEST_PATH'})
         except Exception as e:
             self._send_json({'ok': False, 'error': str(e)}, 500)
+
+    def _handle_check_ytdlp(self, body):
+        available = check_ytdlp()
+        self._send_json({'ok': True, 'available': available})
+
+    def _handle_download_video(self, body):
+        try:
+            tweet_url = body.get('tweetUrl', '')
+            direct_url = body.get('directUrl', '')
+            post_date = body.get('postDate', '')
+            msg_dir = body.get('outputDir', '').strip()
+            out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
+            download_id = str(uuid.uuid4())
+            start_download(download_id, tweet_url, direct_url, out_dir, post_date)
+            self._send_json({'ok': True, 'downloadId': download_id})
+        except Exception as e:
+            self._send_json({'ok': False, 'error': str(e)}, 500)
+
+    def _handle_download_status(self, body):
+        download_id = body.get('downloadId', '')
+        status = get_download_status(download_id)
+        self._send_json({'ok': True, **status})
 
 
 def main():

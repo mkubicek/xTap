@@ -13,6 +13,8 @@
     <dict>
         <key>HOME</key>
         <string>__HOME_DIR__</string>
+        <key>PATH</key>
+        <string>__PATH__</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

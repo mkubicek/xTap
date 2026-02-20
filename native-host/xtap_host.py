@@ -6,7 +6,8 @@ import os
 import struct
 import sys
 
-from xtap_core import DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir, write_tweets, write_log, write_dump, test_path
+from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
+                       write_tweets, write_log, write_dump, test_path)
 
 XTAP_PORT = 17381
 XTAP_DIR = os.path.expanduser('~/.xtap')

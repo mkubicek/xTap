@@ -21,6 +21,12 @@ let logBuffer = [];
 let readyResolve;
 const ready = new Promise(r => { readyResolve = r; });
 
+// --- Recent tweets cache (for video download lookup) ---
+const MAX_RECENT_TWEETS = 1000;
+const recentTweets = new Map();
+// tweetId → downloadId for in-progress downloads (so popup can resume polling)
+const activeDownloads = new Map();
+
 // --- Transport state ---
 // 'http' | 'native' | 'none'
 let transport = 'none';
@@ -222,6 +228,16 @@ async function sendToHost(msg) {
         path = '/dump';
         body = { filename: msg.filename, content: msg.content };
         if (msg.outputDir) body.outputDir = msg.outputDir;
+      } else if (msg.type === 'CHECK_YTDLP') {
+        path = '/check-ytdlp';
+        body = {};
+      } else if (msg.type === 'DOWNLOAD_VIDEO') {
+        path = '/download-video';
+        body = { tweetUrl: msg.tweetUrl, directUrl: msg.directUrl, postDate: msg.postDate };
+        if (msg.outputDir) body.outputDir = msg.outputDir;
+      } else if (msg.type === 'DOWNLOAD_STATUS') {
+        path = '/download-status';
+        body = { downloadId: msg.downloadId };
       } else {
         path = '/tweets';
         body = { tweets: msg.tweets };
@@ -302,6 +318,16 @@ async function flush() {
 function enqueueTweets(tweets) {
   let newCount = 0;
   for (const tweet of tweets) {
+    // Always cache for video lookup (even dupes — updates with latest data)
+    if (tweet.id) {
+      recentTweets.set(tweet.id, tweet);
+      // FIFO eviction
+      if (recentTweets.size > MAX_RECENT_TWEETS) {
+        const oldest = recentTweets.keys().next().value;
+        recentTweets.delete(oldest);
+      }
+    }
+
     // Article tweets bypass dedup — they enrich a previously captured stub
     if (seenIds.has(tweet.id) && !tweet.is_article) continue;
     seenIds.add(tweet.id);
@@ -526,6 +552,84 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     captureEnabled = !captureEnabled;
     saveState();
     sendResponse({ captureEnabled });
+    return true;
+  }
+
+  if (msg.type === 'CHECK_VIDEO') {
+    const tweet = recentTweets.get(msg.tweetId);
+    if (!tweet || !tweet.media || tweet.media.length === 0) {
+      sendResponse({ hasVideo: false });
+      return true;
+    }
+    const videoMedia = tweet.media.find(m => m.type === 'video' || m.type === 'animated_gif');
+    if (!videoMedia) {
+      sendResponse({ hasVideo: false });
+      return true;
+    }
+    sendResponse({
+      hasVideo: true,
+      tweetUrl: tweet.url || `https://x.com/i/status/${msg.tweetId}`,
+      directUrl: videoMedia.url || null,
+      mediaType: videoMedia.type,
+      durationMs: videoMedia.duration_ms || null,
+      postDate: tweet.created_at || null,
+      activeDownloadId: activeDownloads.get(msg.tweetId) || null,
+    });
+    return true;
+  }
+
+  if (msg.type === 'CHECK_YTDLP') {
+    (async () => {
+      try {
+        const resp = await sendToHost({ type: 'CHECK_YTDLP' });
+        sendResponse(resp || { ok: false, error: 'No transport' });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === 'DOWNLOAD_VIDEO') {
+    (async () => {
+      try {
+        const resp = await sendToHost({
+          type: 'DOWNLOAD_VIDEO',
+          tweetUrl: msg.tweetUrl,
+          directUrl: msg.directUrl,
+          postDate: msg.postDate,
+          outputDir: outputDir || undefined,
+        });
+        // Track active download so popup can resume polling after close/reopen
+        if (resp?.ok && resp.downloadId && msg.tweetId) {
+          activeDownloads.set(msg.tweetId, resp.downloadId);
+        }
+        sendResponse(resp || { ok: false, error: 'No transport' });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === 'DOWNLOAD_STATUS') {
+    (async () => {
+      try {
+        const resp = await sendToHost({
+          type: 'DOWNLOAD_STATUS',
+          downloadId: msg.downloadId,
+        });
+        // Clean up finished downloads from active map
+        if (resp?.status === 'done' || resp?.status === 'error') {
+          for (const [tid, did] of activeDownloads) {
+            if (did === msg.downloadId) { activeDownloads.delete(tid); break; }
+          }
+        }
+        sendResponse(resp || { ok: false, error: 'No transport' });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
     return true;
   }
 });

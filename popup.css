@@ -88,6 +88,61 @@ button.paused {
   color: #fff;
 }
 
+.video-section {
+  margin-top: 14px;
+  border-top: 1px solid #2f3336;
+  padding-top: 12px;
+}
+
+.video-info {
+  font-size: 13px;
+  color: #8b98a5;
+  margin-bottom: 8px;
+}
+
+.ytdlp-hint {
+  font-size: 11px;
+  color: #8b98a5;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.ytdlp-hint a {
+  color: #1d9bf0;
+  text-decoration: none;
+}
+
+.ytdlp-hint a:hover {
+  text-decoration: underline;
+}
+
+.video-warning {
+  font-size: 11px;
+  color: #facc15;
+  margin-bottom: 8px;
+}
+
+.download-btn {
+  background: #1d9bf0;
+  color: #fff;
+}
+
+.download-btn.downloading {
+  background: #1a8cd8;
+  cursor: default;
+  opacity: 0.9;
+}
+
+.download-btn.success {
+  background: #0d3b1e;
+  color: #4ade80;
+}
+
+.download-btn.error {
+  background: #3b1c1c;
+  color: #f87171;
+}
+
 .settings {
   margin-top: 14px;
   border-top: 1px solid #2f3336;
