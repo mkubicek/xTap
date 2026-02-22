@@ -29,6 +29,9 @@ class TestDatePrefix:
     def test_none(self):
         assert xtap_core._date_prefix(None) == ''
 
+    def test_non_string_returns_empty(self):
+        assert xtap_core._date_prefix(12345) == ''
+
 
 # ---------------------------------------------------------------------------
 # load_seen_ids
@@ -209,3 +212,102 @@ class TestResolveOutputDir:
         custom_dirs = set()
         xtap_core.resolve_output_dir(custom, '/default', seen, custom_dirs)
         assert '999' in seen
+
+
+# ---------------------------------------------------------------------------
+# write_log
+# ---------------------------------------------------------------------------
+
+
+class TestWriteLog:
+    def test_basic_write(self, tmp_path):
+        count = xtap_core.write_log(['line one', 'line two'], str(tmp_path))
+        assert count == 2
+        files = list(tmp_path.glob('debug-*.log'))
+        assert len(files) == 1
+        content = files[0].read_text()
+        assert 'line one\n' in content
+        assert 'line two\n' in content
+
+    def test_appends(self, tmp_path):
+        xtap_core.write_log(['first'], str(tmp_path))
+        xtap_core.write_log(['second'], str(tmp_path))
+        files = list(tmp_path.glob('debug-*.log'))
+        lines = files[0].read_text().strip().split('\n')
+        assert len(lines) == 2
+
+    def test_empty_list(self, tmp_path):
+        count = xtap_core.write_log([], str(tmp_path))
+        assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# write_dump
+# ---------------------------------------------------------------------------
+
+
+class TestWriteDump:
+    def test_basic_write(self, tmp_path):
+        path = xtap_core.write_dump('test.json', '{"key": "value"}', str(tmp_path))
+        assert os.path.exists(path)
+        assert (tmp_path / 'test.json').read_text() == '{"key": "value"}'
+
+    def test_overwrites_existing(self, tmp_path):
+        xtap_core.write_dump('test.json', 'old', str(tmp_path))
+        xtap_core.write_dump('test.json', 'new', str(tmp_path))
+        assert (tmp_path / 'test.json').read_text() == 'new'
+
+
+# ---------------------------------------------------------------------------
+# test_path
+# ---------------------------------------------------------------------------
+
+
+class TestTestPath:
+    def test_writable_dir(self, tmp_path):
+        xtap_core.test_path(str(tmp_path))  # should not raise
+
+    def test_creates_dir(self, tmp_path):
+        new_dir = str(tmp_path / 'sub' / 'dir')
+        xtap_core.test_path(new_dir)
+        assert os.path.isdir(new_dir)
+
+    def test_no_leftover_file(self, tmp_path):
+        xtap_core.test_path(str(tmp_path))
+        assert not (tmp_path / '.xtap-write-test').exists()
+
+
+# ---------------------------------------------------------------------------
+# get_download_status
+# ---------------------------------------------------------------------------
+
+
+class TestGetDownloadStatus:
+    def test_unknown_id(self):
+        result = xtap_core.get_download_status('nonexistent-id')
+        assert result == {'status': 'unknown'}
+
+    def test_known_download(self):
+        xtap_core._downloads['test-dl'] = {
+            'status': 'downloading',
+            'progress': 50.0,
+            'path': None,
+            'error': None,
+        }
+        result = xtap_core.get_download_status('test-dl')
+        assert result['status'] == 'downloading'
+        assert result['progress'] == 50.0
+        # Clean up
+        del xtap_core._downloads['test-dl']
+
+    def test_completed_download(self):
+        xtap_core._downloads['test-done'] = {
+            'status': 'done',
+            'progress': 100,
+            'path': '/tmp/video.mp4',
+            'error': None,
+        }
+        result = xtap_core.get_download_status('test-done')
+        assert result['status'] == 'done'
+        assert result['path'] == '/tmp/video.mp4'
+        del xtap_core._downloads['test-done']

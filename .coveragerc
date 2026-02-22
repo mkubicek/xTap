@@ -1,0 +1,5 @@
+[run]
+include = native-host/xtap_core.py
+
+[report]
+show_missing = true

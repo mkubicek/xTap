@@ -24,7 +24,7 @@ jobs:
         run: pip install pytest pytest-cov
 
       - name: Run Python tests
-        run: python3 -m pytest tests/test_xtap_core.py -v --cov=native-host --cov-report=xml:coverage-python.xml
+        run: python3 -m pytest tests/test_xtap_core.py -v --cov --cov-report=xml:coverage-python.xml
 
       - name: Run JS tests with coverage
         run: npx c8 --reporter=lcov --report-dir=coverage-js node --test tests/tweet-parser.test.mjs

@@ -100,7 +100,7 @@ _ytdlp_checked = False
 _downloads = {}
 
 
-def check_ytdlp():
+def check_ytdlp():  # pragma: no cover
     """Check if yt-dlp is available on PATH. Cached after first call."""
     global _ytdlp_path, _ytdlp_checked
     if not _ytdlp_checked:
@@ -134,7 +134,7 @@ def _date_prefix(post_date):
         return ''
 
 
-def download_direct(direct_url, tweet_id, video_dir, post_date=''):
+def download_direct(direct_url, tweet_id, video_dir, post_date=''):  # pragma: no cover
     """Download video via direct CDN URL. Returns the file path."""
     os.makedirs(video_dir, exist_ok=True)
     prefix = _date_prefix(post_date)
@@ -144,7 +144,7 @@ def download_direct(direct_url, tweet_id, video_dir, post_date=''):
     return filepath
 
 
-def start_download(download_id, tweet_url, direct_url, out_dir, post_date=''):
+def start_download(download_id, tweet_url, direct_url, out_dir, post_date=''):  # pragma: no cover
     """Start a background download. Returns immediately; poll get_download_status()."""
     video_dir = os.path.join(out_dir, 'videos')
     os.makedirs(video_dir, exist_ok=True)
@@ -180,7 +180,7 @@ def start_download(download_id, tweet_url, direct_url, out_dir, post_date=''):
     t.start()
 
 
-def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):
+def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pragma: no cover
     """Download using yt-dlp with progress parsing."""
     prefix = _date_prefix(post_date)
     output_template = os.path.join(video_dir, prefix + '%(title)s [%(id)s].%(ext)s')
