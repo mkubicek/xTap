@@ -85,7 +85,7 @@ xTap is a Chrome extension that silently intercepts the GraphQL API responses X/
 
 ## Is This Safe to Use?
 
-X is [rolling out stricter detection for automation and bots](https://x.com/nikitabier). The key line: *"If a human is not tapping on the screen, the account and all associated accounts will likely be suspended."*
+X is [rolling out stricter detection for automation and bots](https://x.com/nikitabier/status/2022496540275937525). The key line: *"If a human is not tapping on the screen, the account and all associated accounts will likely be suspended."*
 
 **xTap is not a bot.** It doesn't post, like, follow, scroll, or make any API calls on your behalf. It sits in the background and reads the responses X already sent to your browser while *you* browse normally. From X's server-side perspective, your account looks identical to any other user — because you *are* a normal user. There is no extra traffic to detect.
 
