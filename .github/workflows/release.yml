@@ -30,9 +30,11 @@ jobs:
             native-host/xtap_daemon.py \
             native-host/com.xtap.host.json \
             native-host/com.xtap.daemon.plist \
+            native-host/com.xtap.daemon.service \
             native-host/install.sh \
             native-host/install.ps1 \
-            native-host/xtap_host.bat
+            native-host/xtap_host.bat \
+            native-host/xtap_daemon.bat
 
       - name: Create GitHub Release
         env:
