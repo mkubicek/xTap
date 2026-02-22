@@ -175,7 +175,7 @@ X sometimes returns `TimelineTweet` entries where `tweet_results.result` is miss
 ## Development Notes
 
 - **No build step** — plain JS, no bundler, no transpilation. Load and go.
-- **Testing:** Load unpacked at `chrome://extensions` with Developer mode. The extension ID changes per install — update `com.xtap.host.json` and re-run the install script.
+- **Testing:** `python3 -m pytest tests/ -v && node --test tests/tweet-parser.test.mjs`. Run after every change. CI runs these on every push to main with coverage uploaded to Codecov. For manual browser testing, load unpacked at `chrome://extensions` with Developer mode. The extension ID changes per install — update `com.xtap.host.json` and re-run the install script.
 - **Debugging:** Enable "Debug logging to file" in the popup. Logs write to `debug-YYYY-MM-DD.log` in the output directory. Service worker console is also visible at `chrome://extensions` → xTap → "Inspect views: service worker".
 - **tweet-parser.js** is the most fragile file — it handles multiple GraphQL response shapes and X changes their API schema without notice. The recursive fallback (`findInstructionsRecursive`) catches many new endpoint shapes automatically, but field-level changes to tweet objects will need manual updates to `normalizeTweet()`.
 - **Service worker module:** `background.js` is loaded as an ES module (`"type": "module"` in manifest). It imports `tweet-parser.js` directly.
@@ -185,6 +185,7 @@ X sometimes returns `TimelineTweet` entries where `tweet_results.result` is miss
 ## Contributing
 
 - Keep it simple. No build tools, no frameworks, no dependencies beyond Python 3 stdlib.
+- Run `python3 -m pytest tests/ -v && node --test tests/tweet-parser.test.mjs` before submitting changes.
 - Every change must maintain zero network footprint. This is the core promise.
 - Stealth constraints are non-negotiable — review the list above before submitting changes.
 - **Update README.md and AGENTS.md after every relevant change** — new features, changed behavior, new config options, output format changes, new endpoints, architectural changes, etc. Both files must stay in sync with the code.

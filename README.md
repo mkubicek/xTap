@@ -21,6 +21,7 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="Platform" />
   <img src="https://img.shields.io/badge/chrome-MV3-green" alt="Chrome MV3" />
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="MIT License" />
+  <a href="https://codecov.io/gh/mkubicek/xTap"><img src="https://codecov.io/gh/mkubicek/xTap/graph/badge.svg" alt="codecov" /></a>
 </p>
 
 ---
@@ -308,6 +309,15 @@ Stop-ScheduledTask -TaskName xTapDaemon                 # stop
 Get-ScheduledTask -TaskName xTapDaemon                  # status
 Get-Content ~\.xtap\daemon-stderr.log -Tail 50 -Wait   # logs
 ```
+
+## Testing
+
+```bash
+python3 -m pytest tests/test_xtap_core.py -v
+node --test tests/tweet-parser.test.mjs
+```
+
+CI runs these on every push to `main` with coverage uploaded to [Codecov](https://codecov.io/gh/mkubicek/xTap).
 
 ## License
 
