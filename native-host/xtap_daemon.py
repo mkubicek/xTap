@@ -13,7 +13,7 @@ from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
                        write_tweets, write_log, write_dump, test_path,
                        check_ytdlp, start_download, get_download_status)
 
-VERSION = '0.13.0'
+VERSION = '0.15.0'
 BIND_HOST = '127.0.0.1'
 BIND_PORT = 17381
 XTAP_DIR = os.path.expanduser('~/.xtap')
