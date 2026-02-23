@@ -140,7 +140,9 @@ def download_direct(direct_url, tweet_id, video_dir, post_date=''):  # pragma: n
     prefix = _date_prefix(post_date)
     filename = f'{prefix}{tweet_id}.mp4'
     filepath = os.path.join(video_dir, filename)
-    urllib.request.urlretrieve(direct_url, filepath)
+    tmp_path = filepath + '.part'
+    urllib.request.urlretrieve(direct_url, tmp_path)
+    os.replace(tmp_path, filepath)
     return filepath
 
 
@@ -181,9 +183,15 @@ def start_download(download_id, tweet_url, direct_url, out_dir, post_date=''):  
 
 
 def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pragma: no cover
-    """Download using yt-dlp with progress parsing."""
+    """Download using yt-dlp with progress parsing.
+
+    Downloads into a .downloading/ staging subdirectory so partial files
+    are not visible in video_dir until the download is fully complete.
+    """
+    staging_dir = os.path.join(video_dir, '.downloading')
+    os.makedirs(staging_dir, exist_ok=True)
     prefix = _date_prefix(post_date)
-    output_template = os.path.join(video_dir, prefix + '%(title)s [%(id)s].%(ext)s')
+    output_template = os.path.join(staging_dir, prefix + '%(title)s [%(id)s].%(ext)s')
     cmd = [
         _ytdlp_path,
         '--newline', '--progress',
@@ -226,6 +234,11 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
         error_lines = [l for l in last_lines if 'ERROR' in l]
         detail = error_lines[-1] if error_lines else (last_lines[-1] if last_lines else '')
         raise RuntimeError(f'yt-dlp failed: {detail}' if detail else f'yt-dlp exited with code {proc.returncode}')
+    # Move completed file from staging dir to final video_dir
+    if final_path and os.path.isfile(final_path):
+        dest_path = os.path.join(video_dir, os.path.basename(final_path))
+        shutil.move(final_path, dest_path)
+        final_path = dest_path
     _downloads[download_id]['progress'] = 100
     _downloads[download_id]['status'] = 'done'
     _downloads[download_id]['path'] = final_path
