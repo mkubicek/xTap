@@ -114,24 +114,28 @@ async function getTokenViaNative() {
       resolve(null);
       return;
     }
-    const timer = setTimeout(() => {
-      port.disconnect();
-      resolve(null);
-    }, 5000);
-    port.onMessage.addListener((msg) => {
+    let settled = false;
+    function finish(value) {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      port.disconnect();
+      try { port.disconnect(); } catch {}
+      resolve(value);
+    }
+    const timer = setTimeout(() => finish(null), 5000);
+    port.onMessage.addListener((msg) => {
       if (msg.ok && msg.token) {
-        resolve({ token: msg.token, port: msg.port });
+        finish({ token: msg.token, port: msg.port });
       } else {
-        resolve(null);
+        finish(null);
       }
     });
-    port.onDisconnect.addListener(() => {
-      clearTimeout(timer);
-      resolve(null);
-    });
-    port.postMessage({ type: 'GET_TOKEN' });
+    port.onDisconnect.addListener(() => finish(null));
+    try {
+      port.postMessage({ type: 'GET_TOKEN' });
+    } catch {
+      finish(null);
+    }
   });
 }
 

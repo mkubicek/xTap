@@ -13,13 +13,29 @@ XTAP_PORT = 17381
 XTAP_DIR = os.path.expanduser('~/.xtap')
 XTAP_SECRET = os.path.join(XTAP_DIR, 'secret')
 
+MAX_MESSAGE_BYTES = 32 * 1024 * 1024  # 32 MiB guard
+
+
+def read_exact(stream, size):
+    """Read exactly *size* bytes from *stream*, handling pipe fragmentation."""
+    buf = b''
+    while len(buf) < size:
+        chunk = stream.read(size - len(buf))
+        if not chunk:
+            raise EOFError('unexpected end of stream')
+        buf += chunk
+    return buf
+
 
 def read_message():
-    raw_length = sys.stdin.buffer.read(4)
-    if not raw_length or len(raw_length) < 4:
-        return None
-    length = struct.unpack('<I', raw_length)[0]
-    data = sys.stdin.buffer.read(length)
+    try:
+        header = read_exact(sys.stdin.buffer, 4)
+    except EOFError:
+        raise EOFError('stdin closed')
+    length = struct.unpack('<I', header)[0]
+    if length > MAX_MESSAGE_BYTES:
+        raise ValueError(f'message too large: {length} bytes')
+    data = read_exact(sys.stdin.buffer, length)
     return json.loads(data)
 
 
@@ -32,14 +48,32 @@ def send_message(msg):
 
 def main():
     out_dir = DEFAULT_OUTPUT_DIR
-    os.makedirs(out_dir, exist_ok=True)
-    seen_ids = load_seen_ids(out_dir)
+    seen_ids = None
     custom_dirs = set()
+    storage_ready = False
 
     while True:
-        msg = read_message()
-        if msg is None:
+        try:
+            msg = read_message()
+        except EOFError:
             break
+        except Exception as e:
+            send_message({'ok': False, 'error': str(e)})
+            continue
+
+        # GET_TOKEN does not require storage
+        if msg.get('type') == 'GET_TOKEN':
+            try:
+                _handle_message(msg, out_dir, seen_ids, custom_dirs)
+            except Exception as e:
+                send_message({'ok': False, 'error': str(e)})
+            continue
+
+        # Lazy storage init on first non-GET_TOKEN message
+        if not storage_ready:
+            os.makedirs(out_dir, exist_ok=True)
+            seen_ids = load_seen_ids(out_dir)
+            storage_ready = True
 
         try:
             _handle_message(msg, out_dir, seen_ids, custom_dirs)
