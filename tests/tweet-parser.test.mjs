@@ -538,13 +538,14 @@ describe('extractTweets', () => {
     assert.equal(tweets[0].author.username, 'testuser');
   });
 
-  it('TweetResultByRestId without article returns empty', () => {
+  it('TweetResultByRestId without article returns regular tweet', () => {
     const raw = makeRawTweet();
     const data = {
       data: { tweetResult: { result: raw } },
     };
     const tweets = extractTweets('TweetResultByRestId', data);
-    assert.deepStrictEqual(tweets, []);
+    assert.equal(tweets.length, 1);
+    assert.equal(tweets[0].is_article, undefined);
   });
 
   it('TweetResultByRestId with article returns tweet', () => {
