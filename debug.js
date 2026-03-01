@@ -65,13 +65,13 @@ function renderEvents(events) {
 
 function appendEventRow(ev) {
   const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td>${formatTime(ev.timestamp)}</td>
-    <td>${ev.endpoint}</td>
-    <td>${ev.tweetId || '—'}</td>
-    <td class="status-${ev.status}">${ev.status}</td>
-    <td>${ev.reason || ''}</td>
-  `;
+  const cells = [formatTime(ev.timestamp), ev.endpoint, ev.tweetId || '—', ev.status, ev.reason || ''];
+  for (const text of cells) {
+    const td = document.createElement('td');
+    td.textContent = text;
+    tr.appendChild(td);
+  }
+  tr.children[3].className = `status-${ev.status}`;
   eventsBody.appendChild(tr);
   renderedCount++;
   if (autoScrollCheckbox.checked) {
