@@ -18,6 +18,7 @@ let outputDir = '';
 let debugLogging = false;
 let verboseLogging = false;
 let logBuffer = [];
+const isDevMode = !chrome.runtime.getManifest().update_url;
 let readyResolve;
 const ready = new Promise(r => { readyResolve = r; });
 
@@ -35,17 +36,19 @@ let httpPort = null;
 
 // --- State persistence ---
 
+function seenIdsStorage() {
+  return isDevMode ? chrome.storage.session : chrome.storage.local;
+}
+
 async function saveState() {
-  await chrome.storage.local.set({
-    seenIds: [...seenIds].slice(-MAX_SEEN_IDS),
-    allTimeCount,
-    captureEnabled
-  });
+  await seenIdsStorage().set({ seenIds: [...seenIds].slice(-MAX_SEEN_IDS) });
+  await chrome.storage.local.set({ allTimeCount, captureEnabled });
 }
 
 async function restoreState() {
-  const stored = await chrome.storage.local.get(['seenIds', 'allTimeCount', 'captureEnabled', 'outputDir', 'debugLogging', 'verboseLogging']);
-  if (stored.seenIds) seenIds = new Set(stored.seenIds);
+  const seenStored = await seenIdsStorage().get(['seenIds']);
+  if (seenStored.seenIds) seenIds = new Set(seenStored.seenIds);
+  const stored = await chrome.storage.local.get(['allTimeCount', 'captureEnabled', 'outputDir', 'debugLogging', 'verboseLogging']);
   if (typeof stored.allTimeCount === 'number') allTimeCount = stored.allTimeCount;
   if (typeof stored.captureEnabled === 'boolean') captureEnabled = stored.captureEnabled;
   if (typeof stored.outputDir === 'string') outputDir = stored.outputDir;
@@ -319,7 +322,26 @@ async function flush() {
   if (debugLogging) await flushLogs();
 }
 
-function enqueueTweets(tweets) {
+// --- Trace events ---
+
+const MAX_TRACE_EVENTS = 50;
+let traceEvents = [];
+let traceFlushTimer = null;
+
+function emitTraceEvent(event) {
+  traceEvents.push(event);
+  if (traceEvents.length > MAX_TRACE_EVENTS) {
+    traceEvents = traceEvents.slice(-MAX_TRACE_EVENTS);
+  }
+  if (!traceFlushTimer) {
+    traceFlushTimer = setTimeout(() => {
+      traceFlushTimer = null;
+      chrome.storage.session.set({ lastEvents: traceEvents });
+    }, 500);
+  }
+}
+
+function enqueueTweets(tweets, endpoint = 'unknown') {
   let newCount = 0;
   for (const tweet of tweets) {
     // Always cache for video lookup (even dupes — updates with latest data)
@@ -333,10 +355,14 @@ function enqueueTweets(tweets) {
     }
 
     // Article tweets bypass dedup — they enrich a previously captured stub
-    if (seenIds.has(tweet.id) && !tweet.is_article) continue;
+    if (seenIds.has(tweet.id) && !tweet.is_article) {
+      emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'DEDUPLICATED', reason: 'seenIds' });
+      continue;
+    }
     seenIds.add(tweet.id);
     buffer.push(tweet);
     newCount++;
+    emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'ACCEPTED', reason: null });
   }
 
   // FIFO eviction if seenIds grows too large
@@ -460,10 +486,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (missingAuthor > 0) warn += ` | ${missingAuthor} missing username`;
           if (missingText > 0) warn += ` | ${missingText} missing text`;
           console.log(`[xTap] ${msg.endpoint}: ${tweets.length} tweets${warn}`);
-          enqueueTweets(tweets);
+          enqueueTweets(tweets, msg.endpoint);
         }
       } catch (e) {
         console.error(`[xTap] Parse error for ${msg.endpoint}:`, e, '| data keys:', Object.keys(msg.data || {}).join(', '));
+        emitTraceEvent({ timestamp: Date.now(), endpoint: msg.endpoint, tweetId: null, status: 'PARSER_ERROR', reason: e.message });
       }
     })();
     return;
@@ -640,6 +667,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 // --- Init ---
 
+chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
+
 restoreState().then(async () => {
   readyResolve();
   updateBadge();
@@ -649,5 +678,5 @@ restoreState().then(async () => {
     flushTimer = setTimeout(() => { scheduledFlush(); scheduleNextFlush(); }, FLUSH_INTERVAL_MS + jitter);
   }
   scheduleNextFlush();
-  console.log('[xTap] Service worker started');
+  console.log(`[xTap] Service worker started (${isDevMode ? 'dev' : 'production'} mode, seenIds in ${isDevMode ? 'session' : 'local'} storage)`);
 });
