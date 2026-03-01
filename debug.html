@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>xTap Debug Dashboard</title>
+  <link rel="stylesheet" href="debug.css">
+</head>
+<body>
+  <div class="container">
+    <h1>xTap Debug Dashboard</h1>
+
+    <section class="panel">
+      <h2>Transport Health</h2>
+      <table class="health-table">
+        <tr><td class="label">Transport</td><td id="h-transport">—</td></tr>
+        <tr><td class="label">Status</td><td id="h-status">—</td></tr>
+        <tr><td class="label">Capture</td><td id="h-capture">—</td></tr>
+        <tr><td class="label">Session count</td><td id="h-session">—</td></tr>
+        <tr><td class="label">All-time count</td><td id="h-alltime">—</td></tr>
+        <tr><td class="label">Buffer size</td><td id="h-buffer">—</td></tr>
+      </table>
+      <div class="toggle-row">
+        <label><input type="checkbox" id="debug-toggle"> Debug logging to file</label>
+      </div>
+      <div class="toggle-row">
+        <label><input type="checkbox" id="verbose-toggle"> Discovery mode (verbose endpoint logging)</label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>
+        Capture Events
+        <span class="panel-actions">
+          <label class="auto-scroll-label"><input type="checkbox" id="auto-scroll" checked> Auto-scroll</label>
+          <button id="clear-events" class="small-btn">Clear</button>
+        </span>
+      </h2>
+      <div class="events-wrap">
+        <table class="events-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Endpoint</th>
+              <th>Tweet ID</th>
+              <th>Status</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="events-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Parser Sandbox</h2>
+      <div class="sandbox-row">
+        <label for="sandbox-endpoint">Endpoint</label>
+        <input type="text" id="sandbox-endpoint" placeholder="e.g. HomeTimeline" spellcheck="false">
+      </div>
+      <div class="sandbox-row">
+        <label for="sandbox-json">Response JSON</label>
+        <textarea id="sandbox-json" rows="10" placeholder="Paste raw GraphQL JSON here..." spellcheck="false"></textarea>
+      </div>
+      <button id="sandbox-run" class="action-btn">Run Parser</button>
+      <pre id="sandbox-output" class="sandbox-output"></pre>
+    </section>
+  </div>
+  <script type="module" src="debug.js"></script>
+</body>
+</html>

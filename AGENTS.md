@@ -20,7 +20,7 @@ content-bridge.js (ISOLATED world)
   ▼
 background.js (Service Worker, ES module)
   │  Parses tweet data via lib/tweet-parser.js
-  │  Deduplicates (Set of seen IDs, max 50k, persisted to chrome.storage.local)
+  │  Deduplicates (Set of seen IDs, max 50k; session storage in dev, local in prod)
   │  Batches (50 tweets or 30–45s jittered flush)
   │  Debug logging: intercepts console.log/warn/error, sends to host
   │  Transport abstraction: tries HTTP daemon first, falls back to native messaging
@@ -50,7 +50,9 @@ debug-YYYY-MM-DD.log     (when debug logging enabled)
 - **Dual transport (HTTP + native messaging):** The HTTP daemon (`xtap_daemon.py`) is managed by launchd (macOS), systemd (Linux), or Scheduled Task (Windows). On macOS, it additionally runs outside Chrome's TCC sandbox, allowing writes to protected paths. At startup, the extension connects to the native host to request `GET_TOKEN` (reads `~/.xtap/secret`), then uses that token for HTTP transport. If HTTP is unavailable, native messaging serves as the data transport fallback.
 - **Token bootstrap:** On first run with the daemon installed, the extension connects to the native host once to request `GET_TOKEN`, which reads `~/.xtap/secret`. The token is cached in `chrome.storage.local` and used for subsequent HTTP requests. The native port is then disconnected.
 - **Shared core logic:** `xtap_core.py` contains all file I/O logic (load seen IDs, resolve output dir, write tweets/logs, test path), used by both `xtap_host.py` and `xtap_daemon.py`.
-- **Dedup in service worker:** Multiple tabs feed the same service worker. `seenIds` Set (max 50,000, FIFO eviction) prevents duplicates. Persisted to `chrome.storage.local` across sessions. Both host and daemon also load seen IDs from existing JSONL files on startup.
+- **Environment detection:** `isDevMode = !chrome.runtime.getManifest().update_url` — packed CWS extensions have `update_url`, unpacked don't. Used to switch seenIds storage between session (dev) and local (production).
+- **Volatile dev cache:** In dev mode (unpacked), `seenIds` is stored in `chrome.storage.session`, which clears on extension reload. This eliminates the need to manually clear storage during development. Production behavior is unchanged (persisted to `chrome.storage.local`).
+- **Dedup in service worker:** Multiple tabs feed the same service worker. `seenIds` Set (max 50,000, FIFO eviction) prevents duplicates. In production, persisted to `chrome.storage.local` across sessions; in dev mode, uses volatile `chrome.storage.session`. Both host and daemon also load seen IDs from existing JSONL files on startup.
 - **Jittered flush:** Batch flush uses `setTimeout` with randomized interval (30s base + up to 50% jitter = 30–45s), re-randomized each cycle. Avoids clockwork-regular patterns.
 - **Path validation:** When the user sets a custom output directory, the service worker sends a `TEST_PATH` message (via HTTP or native), which attempts `makedirs` + write/delete of a temp file before accepting the path.
 - **Error resilience:** The native host wraps per-message handling in try/except and responds with `{ok: false, error: "..."}` instead of crashing. The HTTP daemon returns error status codes. The service worker tracks rapid disconnects to detect crash loops and auto-falls back from HTTP to native on failure.
@@ -64,7 +66,7 @@ debug-YYYY-MM-DD.log     (when debug logging enabled)
 3. **No expando properties** — XHR URL tracking uses a `WeakMap`, never attaches properties to instances.
 4. **No DOM footprint** — no injected elements, no visible page modifications. The only transient artifact is the `<meta name="__cfg">` tag, removed within milliseconds by the bridge script.
 5. **No console output in page context** — all logging happens in the service worker, which runs outside the page's JavaScript environment.
-6. **Minimal permissions** — only `storage` and `nativeMessaging`. Host permissions scoped to `x.com`, `twitter.com`, and `127.0.0.1` (local daemon only). No `webRequest`, no `tabs`, no `scripting`, no web-accessible resources.
+6. **Minimal permissions** — only `storage` and `nativeMessaging`. Host permissions scoped to `x.com`, `twitter.com`, and `127.0.0.1` (local daemon only). No `webRequest`, no `tabs`, no `scripting`, no web-accessible resources. The debug dashboard is an internal extension page (`chrome-extension://` origin), not a web-accessible resource.
 7. **Random event channel** — per-page-load name, meta tag removed immediately after reading.
 8. **Only `open()` patched on XHR** — `send()` is not patched, so non-GraphQL XHR calls have clean stack traces.
 
@@ -78,7 +80,8 @@ xTap/
 ├── background.js              # Service worker (ES module) - transport, parsing, dedup
 ├── content-main.js            # MAIN world - fetch/XHR patching
 ├── content-bridge.js          # ISOLATED world - event relay
-├── popup.html/js/css          # Extension popup (stats, pause/resume, output dir, debug toggle)
+├── popup.html/js/css          # Extension popup (stats, pause/resume, output dir)
+├── debug.html/js/css          # Debug dashboard (live events, transport health, debug/discovery toggles, parser sandbox)
 ├── icons/                     # Extension icons (16, 48, 128)
 ├── lib/
 │   └── tweet-parser.js        # GraphQL response → normalized tweet objects
@@ -176,7 +179,8 @@ X sometimes returns `TimelineTweet` entries where `tweet_results.result` is miss
 
 - **No build step** — plain JS, no bundler, no transpilation. Load and go.
 - **Testing:** `python3 -m pytest tests/ -v && node --test tests/tweet-parser.test.mjs`. Run after every change. CI runs these on every push to main with coverage uploaded to Codecov. For manual browser testing, load unpacked at `chrome://extensions` with Developer mode. The extension ID changes per install — update `com.xtap.host.json` and re-run the install script.
-- **Debugging:** Enable "Debug logging to file" in the popup. Logs write to `debug-YYYY-MM-DD.log` in the output directory. Service worker console is also visible at `chrome://extensions` → xTap → "Inspect views: service worker".
+- **Debugging:** Enable "Debug logging to file" in the debug dashboard (popup → "Debug Dashboard"). Logs write to `debug-YYYY-MM-DD.log` in the output directory. Service worker console is also visible at `chrome://extensions` → xTap → "Inspect views: service worker". The debug dashboard also shows live capture events with accept/dedup/error status, transport health, and a parser sandbox for testing `extractTweets` against raw JSON.
+- **Dev mode seenIds:** When loaded unpacked, `seenIds` uses `chrome.storage.session` (volatile — clears on extension reload). This avoids manual storage clearing between test runs. Check `isDevMode` in the service worker console to verify.
 - **tweet-parser.js** is the most fragile file — it handles multiple GraphQL response shapes and X changes their API schema without notice. The recursive fallback (`findInstructionsRecursive`) catches many new endpoint shapes automatically, but field-level changes to tweet objects will need manual updates to `normalizeTweet()`.
 - **Service worker module:** `background.js` is loaded as an ES module (`"type": "module"` in manifest). It imports `tweet-parser.js` directly.
 - **HTTP daemon:** `xtap_daemon.py` binds `127.0.0.1:17381`. Auth token stored at `~/.xtap/secret` (mode 600). Managed by launchd (macOS: `launchctl kickstart -k gui/$(id -u)/com.xtap.daemon`), systemd (Linux: `systemctl --user restart com.xtap.daemon`), or Scheduled Task (Windows: `Stop-ScheduledTask -TaskName xTapDaemon; Start-ScheduledTask -TaskName xTapDaemon`). Logs: macOS/Windows at `~/.xtap/daemon-stderr.log`, Linux via `journalctl --user -u com.xtap.daemon`.

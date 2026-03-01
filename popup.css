@@ -190,19 +190,16 @@ button.paused {
   background: #b91c1c;
 }
 
-.toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  cursor: pointer;
-}
-
-.toggle-row input[type="checkbox"] {
-  accent-color: #1d9bf0;
-}
-
-.toggle-label {
-  font-size: 12px;
+.debug-link {
+  display: block;
+  text-align: center;
+  margin-top: 12px;
+  font-size: 11px;
   color: #8b98a5;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.debug-link:hover {
+  color: #1d9bf0;
 }

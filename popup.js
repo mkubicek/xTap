@@ -4,8 +4,6 @@ const alltimeEl = document.getElementById('alltime-count');
 const toggleBtn = document.getElementById('toggle');
 const outputDirInput = document.getElementById('output-dir');
 const saveDirBtn = document.getElementById('save-dir');
-const debugToggle = document.getElementById('debug-toggle');
-const verboseToggle = document.getElementById('verbose-toggle');
 const videoSection = document.getElementById('video-section');
 const videoLabel = document.getElementById('video-label');
 const ytdlpHint = document.getElementById('ytdlp-hint');
@@ -35,9 +33,6 @@ function render(state) {
   if (state.outputDir) {
     outputDirInput.value = state.outputDir;
   }
-
-  debugToggle.checked = !!state.debugLogging;
-  verboseToggle.checked = !!state.verboseLogging;
 
   currentTransport = state.transport;
 }
@@ -73,18 +68,6 @@ saveDirBtn.addEventListener('click', () => {
       outputDirInput.title = '';
     }
     setTimeout(() => { saveDirBtn.textContent = 'Save'; }, 2000);
-  });
-});
-
-debugToggle.addEventListener('change', () => {
-  chrome.runtime.sendMessage({ type: 'SET_DEBUG', debugLogging: debugToggle.checked }, () => {
-    refresh();
-  });
-});
-
-verboseToggle.addEventListener('change', () => {
-  chrome.runtime.sendMessage({ type: 'SET_VERBOSE', verboseLogging: verboseToggle.checked }, () => {
-    refresh();
   });
 });
 
@@ -197,5 +180,9 @@ function showDownloadResult(type, message) {
     downloadBtn.disabled = false;
   }, 3000);
 }
+
+document.getElementById('open-debug').addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('debug.html') });
+});
 
 refresh();

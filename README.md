@@ -38,6 +38,7 @@ xTap is a Chrome extension that silently intercepts the GraphQL API responses X/
 - **Live counter** — badge on the extension icon shows tweets captured this session
 - **Multi-tab aware** — multiple X tabs feed into the same service worker with shared deduplication
 - **Debug logging** — optional toggle to write timestamped service worker logs to a date-rotated file
+- **Debug dashboard** — internal extension page with live capture events, transport health, and a parser sandbox for testing GraphQL response parsing
 - **Cross-platform** — works on macOS, Linux, and Windows
 
 ## How It Works
@@ -195,8 +196,7 @@ export XTAP_OUTPUT_DIR="$HOME/Documents/xtap-data"
 |---|---|---|
 | Popup "Output directory" | *(empty — uses default)* | Overrides the output path per-session |
 | `XTAP_OUTPUT_DIR` env var | `~/Downloads/xtap` | Fallback when no popup setting is configured |
-| Debug logging toggle | Off | Writes service worker logs to `debug-YYYY-MM-DD.log` in the output directory |
-| Discovery mode toggle | Off | Logs endpoint response shapes and can dump full JSON responses to disk |
+| Debug Dashboard | — | Accessible via popup link; shows live capture events, transport health, debug logging and discovery mode toggles, and parser sandbox |
 
 > **macOS note:** On macOS, the HTTP daemon (installed via `install.sh`) runs outside Chrome's TCC sandbox and can write to protected paths like `~/Documents` and iCloud Drive after a one-time macOS permission prompt. If the daemon is unavailable and the extension falls back to native messaging, protected paths will fail with a permission error — `~/Downloads` is the safe default in that case.
 
@@ -267,6 +267,7 @@ xTap/
 ├── content-main.js            # MAIN world — patches fetch/XHR, emits events
 ├── content-bridge.js          # ISOLATED world — relays events to service worker
 ├── popup.html/js/css          # Extension popup UI
+├── debug.html/js/css          # Debug dashboard (live events, transport health, parser sandbox)
 ├── icons/                     # Extension icons
 ├── lib/                       # Shared utilities
 └── native-host/
@@ -284,6 +285,10 @@ xTap/
 ## Development
 
 After modifying extension files (`background.js`, `lib/`, `content-*.js`, `popup.*`), reload the extension at `chrome://extensions` and hard-reload any open X tabs.
+
+**Debug dashboard:** Click "Debug Dashboard" in the popup to open a live view of capture events, transport health, and a parser sandbox for testing `extractTweets` against raw GraphQL JSON. Debug logging and discovery mode toggles are also here — enable debug logging to write timestamped service worker logs to `debug-YYYY-MM-DD.log`, or discovery mode to log endpoint response shapes to the console.
+
+**Dev mode:** When loaded unpacked (developer mode), the extension uses `chrome.storage.session` for the `seenIds` dedup cache instead of `chrome.storage.local`. This means reloading the extension automatically clears the cache — no need to manually clear storage between test runs. Production (CWS) behavior is unchanged.
 
 After modifying Python host files (`xtap_core.py`, `xtap_host.py`, `xtap_daemon.py`), the native host picks up changes on next Chrome restart. To restart the HTTP daemon immediately:
 
