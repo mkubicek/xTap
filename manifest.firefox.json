@@ -6,7 +6,7 @@
   "permissions": ["storage", "nativeMessaging"],
   "host_permissions": ["*://*.x.com/*", "*://*.twitter.com/*", "http://127.0.0.1/*"],
   "background": {
-    "service_worker": "background.js",
+    "scripts": ["background.js"],
     "type": "module"
   },
   "content_scripts": [
