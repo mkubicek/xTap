@@ -127,6 +127,7 @@ For Chrome:
 4. Copy the extension ID shown on the card (used by native host install)
 
 For Firefox:
+Thanks [Vincent Koc](https://github.com/vincentkoc) for the Firefox support contribution.
 1. Create a Firefox copy of the extension directory (so your Chrome manifest stays unchanged)
 2. In that copy, replace `manifest.json` with `manifest.firefox.json` (rename it to `manifest.json`)
 3. Open `about:debugging#/runtime/this-firefox`
