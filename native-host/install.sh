@@ -1,6 +1,8 @@
 #!/bin/bash
 # xTap — installer for the native messaging host and HTTP daemon (macOS / Linux).
-# Usage: ./install.sh <chrome-extension-id>
+# Usage:
+#   ./install.sh <extension-id> [chrome|firefox]
+#   ./install.sh firefox [extension-id]
 
 set -euo pipefail
 
@@ -10,12 +12,42 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 if [ $# -lt 1 ]; then
-  echo "Usage: $0 <chrome-extension-id>"
-  echo "  Find your extension ID at chrome://extensions (enable Developer mode)"
+  echo "Usage:"
+  echo "  $0 <extension-id> [chrome|firefox]"
+  echo "  $0 firefox [extension-id]"
+  echo ""
+  echo "Chrome ID: chrome://extensions (Developer mode)"
+  echo "Firefox ID default: xtap@mkubicek.dev (from manifest.firefox.json)"
   exit 1
 fi
 
-EXT_ID="$1"
+BROWSER="chrome"
+EXT_ID=""
+if [ "$1" = "chrome" ] || [ "$1" = "firefox" ]; then
+  BROWSER="$1"
+  EXT_ID="${2:-}"
+else
+  EXT_ID="$1"
+  if [ $# -ge 2 ]; then
+    BROWSER="$2"
+  fi
+fi
+
+if [ "$BROWSER" != "chrome" ] && [ "$BROWSER" != "firefox" ]; then
+  echo "Error: browser must be 'chrome' or 'firefox'"
+  exit 1
+fi
+
+if [ "$BROWSER" = "firefox" ] && [ -z "$EXT_ID" ]; then
+  EXT_ID="xtap@mkubicek.dev"
+fi
+
+if [ -z "$EXT_ID" ]; then
+  echo "Error: extension ID is required for Chrome installs."
+  echo "Find it at chrome://extensions (enable Developer mode)."
+  exit 1
+fi
+
 HOST_NAME="com.xtap.host"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOST_PATH="${SCRIPT_DIR}/xtap_host.py"
@@ -23,10 +55,18 @@ HOST_PATH="${SCRIPT_DIR}/xtap_host.py"
 OS="$(uname)"
 case "$OS" in
   Darwin)
-    TARGET_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+    if [ "$BROWSER" = "firefox" ]; then
+      TARGET_DIR="$HOME/Library/Application Support/Mozilla/NativeMessagingHosts"
+    else
+      TARGET_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+    fi
     ;;
   Linux)
-    TARGET_DIR="$HOME/.config/google-chrome/NativeMessagingHosts"
+    if [ "$BROWSER" = "firefox" ]; then
+      TARGET_DIR="$HOME/.mozilla/native-messaging-hosts"
+    else
+      TARGET_DIR="$HOME/.config/google-chrome/NativeMessagingHosts"
+    fi
     ;;
   *)
     echo "Error: Unsupported OS '$OS'. Use install.ps1 on Windows."
@@ -49,7 +89,18 @@ chmod +x "$HOST_PATH"
 mkdir -p "$TARGET_DIR"
 
 # Write native messaging manifest
-cat > "$MANIFEST_PATH" <<EOF
+if [ "$BROWSER" = "firefox" ]; then
+  cat > "$MANIFEST_PATH" <<EOF
+{
+  "name": "${HOST_NAME}",
+  "description": "xTap native messaging host — writes captured tweets to JSONL",
+  "path": "${HOST_PATH}",
+  "type": "stdio",
+  "allowed_extensions": ["${EXT_ID}"]
+}
+EOF
+else
+  cat > "$MANIFEST_PATH" <<EOF
 {
   "name": "${HOST_NAME}",
   "description": "xTap native messaging host — writes captured tweets to JSONL",
@@ -58,10 +109,12 @@ cat > "$MANIFEST_PATH" <<EOF
   "allowed_origins": ["chrome-extension://${EXT_ID}/"]
 }
 EOF
+fi
 
 echo "Installed native messaging host manifest to:"
 echo "  $MANIFEST_PATH"
 echo ""
+echo "Browser: $BROWSER"
 echo "Host script: $HOST_PATH"
 echo "Extension ID: $EXT_ID"
 
