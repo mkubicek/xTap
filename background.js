@@ -1,5 +1,6 @@
 // xTap — Service Worker (background)
 import { extractTweets } from './lib/tweet-parser.js';
+import { storageGet, storageSet } from './lib/storage-compat.js';
 
 const NATIVE_HOST = 'com.xtap.host';
 const BATCH_SIZE = 50;
@@ -46,18 +47,18 @@ async function saveState() {
   const seenData = { seenIds: [...seenIds].slice(-MAX_SEEN_IDS) };
   if (isDevMode && hasSessionStorage) {
     await Promise.all([
-      chrome.storage.session.set(seenData),
-      chrome.storage.local.set({ allTimeCount, captureEnabled }),
+      storageSet(chrome.storage.session, seenData, chrome.runtime),
+      storageSet(chrome.storage.local, { allTimeCount, captureEnabled }, chrome.runtime),
     ]);
   } else {
-    await chrome.storage.local.set({ ...seenData, allTimeCount, captureEnabled });
+    await storageSet(chrome.storage.local, { ...seenData, allTimeCount, captureEnabled }, chrome.runtime);
   }
 }
 
 async function restoreState() {
   const [seenStored, stored] = await Promise.all([
-    seenIdsStorage().get(['seenIds']),
-    chrome.storage.local.get(['allTimeCount', 'captureEnabled', 'outputDir', 'debugLogging', 'verboseLogging']),
+    storageGet(seenIdsStorage(), ['seenIds'], chrome.runtime),
+    storageGet(chrome.storage.local, ['allTimeCount', 'captureEnabled', 'outputDir', 'debugLogging', 'verboseLogging'], chrome.runtime),
   ]);
   if (seenStored.seenIds) seenIds = new Set(seenStored.seenIds);
   if (typeof stored.allTimeCount === 'number') allTimeCount = stored.allTimeCount;
@@ -164,7 +165,7 @@ async function getTokenViaNative() {
 
 async function initTransport() {
   // 1. Check cached token
-  const cached = await chrome.storage.local.get(['httpToken', 'httpPort']);
+  const cached = await storageGet(chrome.storage.local, ['httpToken', 'httpPort'], chrome.runtime);
   if (cached.httpToken && cached.httpPort) {
     const alive = await probeHttp(cached.httpPort, cached.httpToken);
     if (alive) {
@@ -184,7 +185,7 @@ async function initTransport() {
       httpToken = result.token;
       httpPort = result.port;
       transport = 'http';
-      await chrome.storage.local.set({ httpToken, httpPort });
+      await storageSet(chrome.storage.local, { httpToken, httpPort }, chrome.runtime);
       console.log('[xTap] Using HTTP transport (token from native host)');
       return;
     }
@@ -693,7 +694,9 @@ if (typeof chrome.storage.session?.setAccessLevel === 'function') {
   chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
 }
 
-restoreState().then(async () => {
+restoreState().catch((e) => {
+  console.error('[xTap] Failed to restore state:', e);
+}).then(async () => {
   readyResolve();
   updateBadge();
   await initTransport();
