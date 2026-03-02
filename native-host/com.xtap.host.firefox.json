@@ -1,0 +1,7 @@
+{
+  "name": "com.xtap.host",
+  "description": "xTap native messaging host — writes captured tweets to JSONL",
+  "path": "/path/to/xtap_host.py",
+  "type": "stdio",
+  "allowed_extensions": ["xtap@mkubicek.dev"]
+}
