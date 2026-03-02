@@ -19,18 +19,18 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="Platform" />
-  <img src="https://img.shields.io/badge/chrome-MV3-green" alt="Chrome MV3" />
+  <img src="https://img.shields.io/badge/browser-Chrome%20%7C%20Firefox-green" alt="Chrome and Firefox" />
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="MIT License" />
   <a href="https://codecov.io/gh/mkubicek/xTap"><img src="https://codecov.io/gh/mkubicek/xTap/graph/badge.svg" alt="codecov" /></a>
 </p>
 
 ---
 
-xTap is a Chrome extension that silently intercepts the GraphQL API responses X/Twitter already sends to your browser and saves every tweet you encounter as structured JSONL. No scraping, no extra requests — just a tap on the data already flowing through.
+xTap is a browser extension (Chrome + Firefox) that silently intercepts the GraphQL API responses X/Twitter already sends to your browser and saves every tweet you encounter as structured JSONL. No scraping, no extra requests — just a tap on the data already flowing through.
 
 ## Features
 
-- **Zero footprint** — no additional network requests; captures what Chrome already receives
+- **Zero footprint** — no additional network requests; captures what your browser already receives
 - **Structured output** — each tweet saved as a clean JSON object with author, metrics, media, and more
 - **Article support** — long-form X articles are captured with full text, inline image references, and Draft.js block structure
 - **Video download** — download videos from tweets using yt-dlp (or direct MP4 fallback) via the extension popup. Requires the HTTP daemon. **Note:** unlike passive capture, video downloads make additional network requests to X and are not stealth.
@@ -81,8 +81,8 @@ xTap is a Chrome extension that silently intercepts the GraphQL API responses X/
 2. Payloads are relayed via a random-named `CustomEvent` to an ISOLATED world bridge, which forwards them to the service worker
 3. The service worker parses, normalizes, deduplicates, and batches tweets
 4. Batches are sent to disk via one of two transports:
-   - **HTTP daemon**: a standalone `xtap_daemon.py` process on `127.0.0.1:17381`, managed by launchd (macOS), systemd (Linux), or Scheduled Task (Windows). On macOS, it runs outside Chrome's TCC sandbox and can write to protected paths like `~/Documents` and iCloud Drive
-   - **Native messaging**: `xtap_host.py` over Chrome's stdio protocol — used at startup to retrieve the daemon's auth token (`GET_TOKEN`), and as a data transport fallback if HTTP is unavailable
+   - **HTTP daemon**: a standalone `xtap_daemon.py` process on `127.0.0.1:17381`, managed by launchd (macOS), systemd (Linux), or Scheduled Task (Windows). On macOS, it runs outside browser TCC sandboxes and can write to protected paths like `~/Documents` and iCloud Drive
+   - **Native messaging**: `xtap_host.py` over browser native messaging (Chrome/Firefox) — used at startup to retrieve the daemon's auth token (`GET_TOKEN`), and as a data transport fallback if HTTP is unavailable
 
 ## Is This Safe to Use?
 
@@ -113,17 +113,28 @@ These measures don't make detection impossible — a determined page script coul
 
 | | Requirement |
 |---|---|
-| **Browser** | Google Chrome |
+| **Browser** | Google Chrome or Mozilla Firefox |
 | **Runtime** | Python 3 |
 | **OS** | macOS, Linux, or Windows |
 | [`yt-dlp`](https://github.com/yt-dlp/yt-dlp#installation) (optional) | For best-quality video downloads |
 
 ### 1. Load the extension
 
+For Chrome:
 1. Open `chrome://extensions`
 2. Enable **Developer mode** (top right)
 3. Click **Load unpacked** and select the `xtap/` directory
-4. Copy the **extension ID** shown on the card
+4. Copy the extension ID shown on the card (used by native host install)
+
+For Firefox:
+1. Create a Firefox copy of the extension directory (so your Chrome manifest stays unchanged)
+2. In that copy, replace `manifest.json` with `manifest.firefox.json` (rename it to `manifest.json`)
+3. Open `about:debugging#/runtime/this-firefox`
+4. Click **Load Temporary Add-on...**
+5. Select the Firefox copy's `manifest.json`
+
+Firefox uses the fixed extension ID from `manifest.firefox.json`: `xtap@mkubicek.dev`.
+Firefox version requirement: 128+ (MV3 `MAIN` world content scripts).
 
 ### 2. Install the native host
 
@@ -132,10 +143,17 @@ These measures don't make detection impossible — a determined page script coul
 
 ```bash
 cd native-host
-./install.sh <your-extension-id>
+./install.sh <your-extension-id> chrome
 ```
 
-This installs the native messaging host and an HTTP daemon (`xtap_daemon.py`) that runs via launchd. The daemon runs independently of Chrome's process tree and has its own TCC permissions, so it can write to protected paths like `~/Documents` and iCloud Drive. The installer captures your current `PATH` so the daemon can find tools like `yt-dlp`.
+For Firefox use:
+
+```bash
+cd native-host
+./install.sh firefox
+```
+
+This installs the native messaging host and an HTTP daemon (`xtap_daemon.py`) that runs via launchd. The daemon runs independently of the browser process tree and has its own TCC permissions, so it can write to protected paths like `~/Documents` and iCloud Drive. The installer captures your current `PATH` so the daemon can find tools like `yt-dlp`.
 
 The extension automatically detects the daemon and uses it as the primary transport, falling back to native messaging if unavailable.
 
@@ -146,7 +164,14 @@ The extension automatically detects the daemon and uses it as the primary transp
 
 ```bash
 cd native-host
-./install.sh <your-extension-id>
+./install.sh <your-extension-id> chrome
+```
+
+For Firefox use:
+
+```bash
+cd native-host
+./install.sh firefox
 ```
 
 This installs the native messaging host and an HTTP daemon (`xtap_daemon.py`) that runs as a systemd user service. The daemon enables video downloads and provides the same HTTP transport as macOS.
@@ -158,7 +183,14 @@ This installs the native messaging host and an HTTP daemon (`xtap_daemon.py`) th
 
 ```powershell
 cd native-host
-.\install.ps1 <your-extension-id>
+.\install.ps1 -ExtensionId <your-extension-id> -Browser chrome
+```
+
+For Firefox use:
+
+```powershell
+cd native-host
+.\install.ps1 -Browser firefox
 ```
 
 This installs the native messaging host and an HTTP daemon (`xtap_daemon.py`) as a Windows Scheduled Task that starts at logon. The daemon enables video downloads and provides the same HTTP transport as macOS/Linux.
@@ -169,13 +201,13 @@ This installs the native messaging host and an HTTP daemon (`xtap_daemon.py`) as
 
 Open [x.com](https://x.com) and browse normally. The badge counter on the extension icon shows how many tweets have been captured this session. Click the icon to see stats and pause/resume capture.
 
-> **After updating the extension:** If you reload xTap at `chrome://extensions`, you must also hard-reload any open X tabs (`Cmd+Shift+R` / `Ctrl+Shift+R`). The content scripts that intercept API responses are injected at page load — stale scripts from before the update won't connect to the new service worker.
+> **After updating the extension:** Reload xTap in your extension manager (`chrome://extensions` or `about:debugging#/runtime/this-firefox`), then hard-reload any open X tabs (`Cmd+Shift+R` / `Ctrl+Shift+R`). The content scripts that intercept API responses are injected at page load, so stale scripts from before the update won't connect to the new service worker.
 
 ### Upgrading from a previous version
 
 After updating the extension files:
 1. Re-run the installer (`install.sh` on macOS/Linux, `install.ps1` on Windows) — this updates the daemon's PATH (required for yt-dlp support) and picks up new Python code
-2. Reload the extension at `chrome://extensions`
+2. Reload the extension in your browser extension manager
 3. Hard-reload any open X tabs (`Cmd+Shift+R` / `Ctrl+Shift+R`)
 
 If you previously installed xTap before v0.13.0 on macOS, re-running `install.sh` is **required** for video download support — the daemon needs an updated launchd configuration to find yt-dlp on your PATH. On Linux and Windows, the daemon is new in this version — running the installer will set it up automatically.
@@ -186,7 +218,7 @@ If you previously installed xTap before v0.13.0 on macOS, re-running `install.sh
 
 The easiest way to change where tweets are saved is through the extension popup — click the xTap icon and enter your preferred path in the **Output directory** field.
 
-Alternatively, set the `XTAP_OUTPUT_DIR` environment variable before launching Chrome:
+Alternatively, set the `XTAP_OUTPUT_DIR` environment variable before launching your browser:
 
 ```bash
 export XTAP_OUTPUT_DIR="$HOME/Documents/xtap-data"
@@ -198,7 +230,7 @@ export XTAP_OUTPUT_DIR="$HOME/Documents/xtap-data"
 | `XTAP_OUTPUT_DIR` env var | `~/Downloads/xtap` | Fallback when no popup setting is configured |
 | Debug Dashboard | — | Accessible via popup link; shows live capture events, transport health, debug logging and discovery mode toggles, and parser sandbox |
 
-> **macOS note:** On macOS, the HTTP daemon (installed via `install.sh`) runs outside Chrome's TCC sandbox and can write to protected paths like `~/Documents` and iCloud Drive after a one-time macOS permission prompt. If the daemon is unavailable and the extension falls back to native messaging, protected paths will fail with a permission error — `~/Downloads` is the safe default in that case.
+> **macOS note:** On macOS, the HTTP daemon (installed via `install.sh`) runs outside browser TCC sandboxes and can write to protected paths like `~/Documents` and iCloud Drive after a one-time macOS permission prompt. If the daemon is unavailable and the extension falls back to native messaging, protected paths will fail with a permission error — `~/Downloads` is the safe default in that case.
 
 ## Output Format
 
@@ -263,6 +295,7 @@ For regular tweets, `is_article` and `article` are absent. For articles, `text` 
 ```
 xTap/
 ├── manifest.json              # Chrome MV3 extension manifest
+├── manifest.firefox.json      # Firefox MV3 extension manifest (Gecko ID + min version)
 ├── background.js              # Service worker — parsing, dedup, transport
 ├── content-main.js            # MAIN world — patches fetch/XHR, emits events
 ├── content-bridge.js          # ISOLATED world — relays events to service worker
@@ -276,6 +309,8 @@ xTap/
     ├── xtap_daemon.py            # HTTP daemon
     ├── com.xtap.daemon.plist     # launchd plist template (macOS)
     ├── com.xtap.daemon.service   # systemd unit template (Linux)
+    ├── com.xtap.host.json        # Native host manifest template (Chrome)
+    ├── com.xtap.host.firefox.json # Native host manifest template (Firefox)
     ├── install.sh                # Installer for macOS / Linux
     ├── install.ps1               # Installer for Windows
     ├── xtap_host.bat             # Windows native host wrapper
@@ -284,13 +319,13 @@ xTap/
 
 ## Development
 
-After modifying extension files (`background.js`, `lib/`, `content-*.js`, `popup.*`), reload the extension at `chrome://extensions` and hard-reload any open X tabs.
+After modifying extension files (`background.js`, `lib/`, `content-*.js`, `popup.*`), reload the extension in your browser (`chrome://extensions` or `about:debugging#/runtime/this-firefox`) and hard-reload any open X tabs.
 
 **Debug dashboard:** Click "Debug Dashboard" in the popup to open a live view of capture events, transport health, and a parser sandbox for testing `extractTweets` against raw GraphQL JSON. Debug logging and discovery mode toggles are also here — enable debug logging to write timestamped service worker logs to `debug-YYYY-MM-DD.log`, or discovery mode to log endpoint response shapes to the console.
 
-**Dev mode:** When loaded unpacked (developer mode), the extension uses `chrome.storage.session` for the `seenIds` dedup cache instead of `chrome.storage.local`. This means reloading the extension automatically clears the cache — no need to manually clear storage between test runs. Production (CWS) behavior is unchanged.
+**Dev mode:** When loaded unpacked (developer mode), the extension prefers `chrome.storage.session` for the `seenIds` dedup cache, and falls back to `chrome.storage.local` if session storage APIs are unavailable. When session storage is available, reloading the extension automatically clears the cache — no need to manually clear storage between test runs.
 
-After modifying Python host files (`xtap_core.py`, `xtap_host.py`, `xtap_daemon.py`), the native host picks up changes on next Chrome restart. To restart the HTTP daemon immediately:
+After modifying Python host files (`xtap_core.py`, `xtap_host.py`, `xtap_daemon.py`), the native host picks up changes on next browser restart. To restart the HTTP daemon immediately:
 
 **macOS (launchd):**
 ```bash
