@@ -79,7 +79,7 @@ xTap is a Chrome extension that silently intercepts the GraphQL API responses X/
 
 1. A MAIN world content script patches `fetch` and `XMLHttpRequest.open()` to observe GraphQL responses as they arrive
 2. Payloads are relayed via a random-named `CustomEvent` to an ISOLATED world bridge, which forwards them to the service worker
-3. The service worker parses, normalizes, deduplicates, and batches tweets
+3. The service worker parses, normalizes, deduplicates, and batches tweets (`pendingIds` while buffered, then `seenIds` after successful flush send)
 4. Batches are sent to disk via one of two transports:
    - **HTTP daemon**: a standalone `xtap_daemon.py` process on `127.0.0.1:17381`, managed by launchd (macOS), systemd (Linux), or Scheduled Task (Windows). On macOS, it runs outside Chrome's TCC sandbox and can write to protected paths like `~/Documents` and iCloud Drive
    - **Native messaging**: `xtap_host.py` over Chrome's stdio protocol — used at startup to retrieve the daemon's auth token (`GET_TOKEN`), and as a data transport fallback if HTTP is unavailable
@@ -288,7 +288,7 @@ After modifying extension files (`background.js`, `lib/`, `content-*.js`, `popup
 
 **Debug dashboard:** Click "Debug Dashboard" in the popup to open a live view of capture events, transport health, and a parser sandbox for testing `extractTweets` against raw GraphQL JSON. Debug logging and discovery mode toggles are also here — enable debug logging to write timestamped service worker logs to `debug-YYYY-MM-DD.log`, or discovery mode to log endpoint response shapes to the console.
 
-**Dev mode:** When loaded unpacked (developer mode), the extension uses `chrome.storage.session` for the `seenIds` dedup cache instead of `chrome.storage.local`. This means reloading the extension automatically clears the cache — no need to manually clear storage between test runs. Production (CWS) behavior is unchanged.
+**Dev mode:** When loaded unpacked (developer mode), the extension uses `chrome.storage.session` for the `seenIds` dedup cache instead of `chrome.storage.local`. This means reloading the extension automatically clears the cache — no need to manually clear storage between test runs. Production (CWS) behavior is unchanged. (Note: `pendingIds` is in-memory only and never persisted.)
 
 After modifying Python host files (`xtap_core.py`, `xtap_host.py`, `xtap_daemon.py`), the native host picks up changes on next Chrome restart. To restart the HTTP daemon immediately:
 

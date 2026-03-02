@@ -12,6 +12,7 @@ let nativePort = null;
 let buffer = [];
 let flushTimer = null;
 let seenIds = new Set();
+let pendingIds = new Set();
 let sessionCount = 0;
 let allTimeCount = 0;
 let outputDir = '';
@@ -63,6 +64,13 @@ async function restoreState() {
   if (typeof stored.outputDir === 'string') outputDir = stored.outputDir;
   if (typeof stored.debugLogging === 'boolean') debugLogging = stored.debugLogging;
   if (typeof stored.verboseLogging === 'boolean') verboseLogging = stored.verboseLogging;
+}
+
+function trimSeenIds() {
+  if (seenIds.size > MAX_SEEN_IDS) {
+    const arr = [...seenIds];
+    seenIds = new Set(arr.slice(arr.length - MAX_SEEN_IDS));
+  }
 }
 
 // --- Debug logging ---
@@ -318,10 +326,25 @@ async function flush() {
     if (outputDir) message.outputDir = outputDir;
 
     try {
+      const transportBefore = transport;
       const resp = await sendToHost(message);
-      if (resp && !resp.ok) {
-        console.error('[xTap] Host rejected tweets:', resp.error);
+      const sentViaHttp = transportBefore === 'http' && transport === 'http';
+      const sentViaNative = transport === 'native' && nativePort;
+      if (sentViaHttp) {
+        if (!resp || !resp.ok) {
+          throw new Error(resp?.error || 'HTTP host rejected tweets');
+        }
+      } else if (!sentViaNative) {
+        throw new Error('No transport available');
       }
+
+      for (const tweet of batch) {
+        if (!tweet.id) continue;
+        pendingIds.delete(tweet.id);
+        seenIds.add(tweet.id);
+      }
+      trimSeenIds();
+      saveState();
     } catch (e) {
       console.error('[xTap] Send failed, buffering tweets back:', e);
       buffer.unshift(...batch);
@@ -364,25 +387,20 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
     }
 
     // Article tweets bypass dedup — they enrich a previously captured stub
-    if (seenIds.has(tweet.id) && !tweet.is_article) {
-      emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'DEDUPLICATED', reason: 'seenIds' });
+    const dedupSource = seenIds.has(tweet.id) ? 'seenIds' : (pendingIds.has(tweet.id) ? 'pendingIds' : null);
+    if (dedupSource && !tweet.is_article) {
+      emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'DEDUPLICATED', reason: dedupSource });
       continue;
     }
-    seenIds.add(tweet.id);
+    if (tweet.id) pendingIds.add(tweet.id);
     buffer.push(tweet);
     newCount++;
     emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'ACCEPTED', reason: null });
   }
 
-  // FIFO eviction if seenIds grows too large
-  if (seenIds.size > MAX_SEEN_IDS) {
-    const arr = [...seenIds];
-    seenIds = new Set(arr.slice(arr.length - MAX_SEEN_IDS));
-  }
-
   const dupeCount = tweets.length - newCount;
   if (dupeCount > 0) {
-    console.log(`[xTap] Dedup: ${newCount} new, ${dupeCount} duplicates skipped (seenIds: ${seenIds.size})`);
+    console.log(`[xTap] Dedup: ${newCount} new, ${dupeCount} duplicates skipped (seenIds: ${seenIds.size}, pendingIds: ${pendingIds.size})`);
   }
 
   sessionCount += newCount;

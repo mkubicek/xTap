@@ -20,7 +20,7 @@ content-bridge.js (ISOLATED world)
   ▼
 background.js (Service Worker, ES module)
   │  Parses tweet data via lib/tweet-parser.js
-  │  Deduplicates (Set of seen IDs, max 50k; session storage in dev, local in prod)
+  │  Deduplicates (pending IDs in-memory, seen IDs persisted; max 50k seen IDs)
   │  Batches (50 tweets or 30–45s jittered flush)
   │  Debug logging: intercepts console.log/warn/error, sends to host
   │  Transport abstraction: tries HTTP daemon first, falls back to native messaging
@@ -52,7 +52,7 @@ debug-YYYY-MM-DD.log     (when debug logging enabled)
 - **Shared core logic:** `xtap_core.py` contains all file I/O logic (load seen IDs, resolve output dir, write tweets/logs, test path), used by both `xtap_host.py` and `xtap_daemon.py`.
 - **Environment detection:** `isDevMode = !chrome.runtime.getManifest().update_url` — packed CWS extensions have `update_url`, unpacked don't. Used to switch seenIds storage between session (dev) and local (production).
 - **Volatile dev cache:** In dev mode (unpacked), `seenIds` is stored in `chrome.storage.session`, which clears on extension reload. This eliminates the need to manually clear storage during development. Production behavior is unchanged (persisted to `chrome.storage.local`).
-- **Dedup in service worker:** Multiple tabs feed the same service worker. `seenIds` Set (max 50,000, FIFO eviction) prevents duplicates. In production, persisted to `chrome.storage.local` across sessions; in dev mode, uses volatile `chrome.storage.session`. Both host and daemon also load seen IDs from existing JSONL files on startup.
+- **Dedup in service worker:** Multiple tabs feed the same service worker. New IDs first enter an in-memory `pendingIds` set, then move to persisted `seenIds` only after a successful flush send. This avoids stale dedup entries if the worker restarts before flush. `seenIds` is capped at 50,000 with FIFO eviction; in production it persists in `chrome.storage.local`, and in dev mode it uses volatile `chrome.storage.session`. Both host and daemon also load seen IDs from existing JSONL files on startup.
 - **Jittered flush:** Batch flush uses `setTimeout` with randomized interval (30s base + up to 50% jitter = 30–45s), re-randomized each cycle. Avoids clockwork-regular patterns.
 - **Path validation:** When the user sets a custom output directory, the service worker sends a `TEST_PATH` message (via HTTP or native), which attempts `makedirs` + write/delete of a temp file before accepting the path.
 - **Error resilience:** The native host wraps per-message handling in try/except and responds with `{ok: false, error: "..."}` instead of crashing. The HTTP daemon returns error status codes. The service worker tracks rapid disconnects to detect crash loops and auto-falls back from HTTP to native on failure.
