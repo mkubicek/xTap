@@ -2,7 +2,7 @@
 
 ## What This Is
 
-xTap is a Chrome extension that passively captures tweets from X/Twitter by intercepting GraphQL API responses the browser already receives. No scraping, no extra requests — just structured JSONL output of what the user sees.
+xTap is a browser extension (Chrome + Firefox) that passively captures tweets from X/Twitter by intercepting GraphQL API responses the browser already receives. No scraping, no extra requests — just structured JSONL output of what the user sees.
 
 **Repo:** github.com/mkubicek/xTap
 **License:** MIT (public repo)
@@ -34,7 +34,7 @@ background.js (Service Worker, ES module)
 └────────────────────────────────────────────────────────────────┘
 ┌─── Native messaging (bootstrap + fallback) ───────────────────┐
 │ xtap_host.py (Python, stdio)                                   │
-│   Chrome native messaging protocol                             │
+│   Browser native messaging protocol (Chrome/Firefox)           │
 │   Also serves GET_TOKEN to bootstrap HTTP transport            │
 └────────────────────────────────────────────────────────────────┘
   │  Both use shared logic from xtap_core.py
@@ -45,9 +45,9 @@ debug-YYYY-MM-DD.log     (when debug logging enabled)
 
 ### Key Design Decisions
 
-- **Two content scripts (MAIN + ISOLATED):** Chrome MV3 requires this split. MAIN world can patch browser APIs but can't use chrome.runtime. ISOLATED world bridges the gap.
+- **Two content scripts (MAIN + ISOLATED):** MV3 requires this split. MAIN world can patch browser APIs but can't use chrome.runtime. ISOLATED world bridges the gap.
 - **Random event channel:** The CustomEvent name is generated per page load (`'_' + Math.random().toString(36).slice(2)`) and passed via a `<meta>` tag that's immediately removed. Avoids predictable DOM markers.
-- **Dual transport (HTTP + native messaging):** The HTTP daemon (`xtap_daemon.py`) is managed by launchd (macOS), systemd (Linux), or Scheduled Task (Windows). On macOS, it additionally runs outside Chrome's TCC sandbox, allowing writes to protected paths. At startup, the extension connects to the native host to request `GET_TOKEN` (reads `~/.xtap/secret`), then uses that token for HTTP transport. If HTTP is unavailable, native messaging serves as the data transport fallback.
+- **Dual transport (HTTP + native messaging):** The HTTP daemon (`xtap_daemon.py`) is managed by launchd (macOS), systemd (Linux), or Scheduled Task (Windows). On macOS, it additionally runs outside browser TCC sandboxes, allowing writes to protected paths. At startup, the extension connects to the native host to request `GET_TOKEN` (reads `~/.xtap/secret`), then uses that token for HTTP transport. If HTTP is unavailable, native messaging serves as the data transport fallback.
 - **Token bootstrap:** On first run with the daemon installed, the extension connects to the native host once to request `GET_TOKEN`, which reads `~/.xtap/secret`. The token is cached in `chrome.storage.local` and used for subsequent HTTP requests. The native port is then disconnected.
 - **Shared core logic:** `xtap_core.py` contains all file I/O logic (load seen IDs, resolve output dir, write tweets/logs, test path), used by both `xtap_host.py` and `xtap_daemon.py`.
 - **Environment detection:** `isDevMode = !chrome.runtime.getManifest().update_url` — packed CWS extensions have `update_url`, unpacked don't. Used to switch seenIds storage between session (dev) and local (production).
@@ -76,7 +76,8 @@ debug-YYYY-MM-DD.log     (when debug logging enabled)
 
 ```
 xTap/
-├── manifest.json              # MV3 manifest (permissions: storage, nativeMessaging)
+├── manifest.json              # Chrome MV3 manifest (permissions: storage, nativeMessaging)
+├── manifest.firefox.json      # Firefox MV3 manifest (Gecko ID + min version)
 ├── background.js              # Service worker (ES module) - transport, parsing, dedup
 ├── content-main.js            # MAIN world - fetch/XHR patching
 ├── content-bridge.js          # ISOLATED world - event relay
@@ -91,7 +92,8 @@ xTap/
     ├── xtap_daemon.py            # HTTP daemon (127.0.0.1:17381)
     ├── com.xtap.daemon.plist     # launchd plist template (macOS)
     ├── com.xtap.daemon.service   # systemd unit template (Linux)
-    ├── com.xtap.host.json        # Native messaging host manifest
+    ├── com.xtap.host.json        # Native messaging host manifest (Chrome)
+    ├── com.xtap.host.firefox.json # Native messaging host manifest (Firefox)
     ├── install.sh                # macOS/Linux installer (+ daemon)
     ├── install.ps1               # Windows installer (+ daemon)
     ├── xtap_host.bat             # Windows native host wrapper
@@ -165,9 +167,9 @@ Notes: `media[].duration_ms` only present for videos. `views` may be `null`. For
 
 ### macOS TCC (Transparency, Consent, and Control)
 
-On macOS, Chrome's native messaging host inherits Chrome's TCC sandbox. After Chrome restarts, writes to protected paths (`~/Documents`, iCloud Drive, etc.) can fail with `PermissionError`.
+On macOS, native messaging hosts can inherit browser TCC sandbox restrictions. After browser restarts, writes to protected paths (`~/Documents`, iCloud Drive, etc.) can fail with `PermissionError`.
 
-**Solution:** The HTTP daemon (`xtap_daemon.py`) runs via launchd, independent of Chrome's process tree. It has its own TCC entitlements and can write to protected paths after a one-time macOS permission prompt. The extension automatically uses the daemon when available, falling back to native messaging otherwise.
+**Solution:** The HTTP daemon (`xtap_daemon.py`) runs via launchd, independent of the browser process tree. It has its own TCC entitlements and can write to protected paths after a one-time macOS permission prompt. The extension automatically uses the daemon when available, falling back to native messaging otherwise.
 
 If falling back to native messaging, `~/Downloads/xtap` is the safe default (no TCC required). The path validation feature catches permission errors at save time.
 
@@ -178,9 +180,9 @@ X sometimes returns `TimelineTweet` entries where `tweet_results.result` is miss
 ## Development Notes
 
 - **No build step** — plain JS, no bundler, no transpilation. Load and go.
-- **Testing:** `python3 -m pytest tests/ -v && node --test tests/tweet-parser.test.mjs`. Run after every change. CI runs these on every push to main with coverage uploaded to Codecov. For manual browser testing, load unpacked at `chrome://extensions` with Developer mode. The extension ID changes per install — update `com.xtap.host.json` and re-run the install script.
-- **Debugging:** Enable "Debug logging to file" in the debug dashboard (popup → "Debug Dashboard"). Logs write to `debug-YYYY-MM-DD.log` in the output directory. Service worker console is also visible at `chrome://extensions` → xTap → "Inspect views: service worker". The debug dashboard also shows live capture events with accept/dedup/error status, transport health, and a parser sandbox for testing `extractTweets` against raw JSON.
-- **Dev mode seenIds:** When loaded unpacked, `seenIds` uses `chrome.storage.session` (volatile — clears on extension reload). This avoids manual storage clearing between test runs. Check `isDevMode` in the service worker console to verify.
+- **Testing:** `python3 -m pytest tests/ -v && node --test tests/tweet-parser.test.mjs`. Run after every change. CI runs these on every push to main with coverage uploaded to Codecov. For manual browser testing, load unpacked in Chrome (`chrome://extensions`) or as a temporary add-on in Firefox (`about:debugging#/runtime/this-firefox`) using `manifest.firefox.json`. Chrome extension IDs vary per install; Firefox uses the fixed Gecko ID in `manifest.firefox.json`. Use the matching installer mode (`install.sh ... chrome|firefox`, `install.ps1 -Browser chrome|firefox`).
+- **Debugging:** Enable "Debug logging to file" in the debug dashboard (popup → "Debug Dashboard"). Logs write to `debug-YYYY-MM-DD.log` in the output directory. Service worker console is visible in each browser's extension debugger. The debug dashboard also shows live capture events with accept/dedup/error status, transport health, and a parser sandbox for testing `extractTweets` against raw JSON.
+- **Dev mode seenIds:** In dev mode, `seenIds` uses `chrome.storage.session` when available (volatile — clears on extension reload). If session storage APIs are unavailable, it safely falls back to `chrome.storage.local`.
 - **tweet-parser.js** is the most fragile file — it handles multiple GraphQL response shapes and X changes their API schema without notice. The recursive fallback (`findInstructionsRecursive`) catches many new endpoint shapes automatically, but field-level changes to tweet objects will need manual updates to `normalizeTweet()`.
 - **Service worker module:** `background.js` is loaded as an ES module (`"type": "module"` in manifest). It imports `tweet-parser.js` directly.
 - **HTTP daemon:** `xtap_daemon.py` binds `127.0.0.1:17381`. Auth token stored at `~/.xtap/secret` (mode 600). Managed by launchd (macOS: `launchctl kickstart -k gui/$(id -u)/com.xtap.daemon`), systemd (Linux: `systemctl --user restart com.xtap.daemon`), or Scheduled Task (Windows: `Stop-ScheduledTask -TaskName xTapDaemon; Start-ScheduledTask -TaskName xTapDaemon`). Logs: macOS/Windows at `~/.xtap/daemon-stderr.log`, Linux via `journalctl --user -u com.xtap.daemon`.
