@@ -180,7 +180,7 @@ X sometimes returns `TimelineTweet` entries where `tweet_results.result` is miss
 ## Development Notes
 
 - **No build step** — plain JS, no bundler, no transpilation. Load and go.
-- **Testing:** `python3 -m pytest tests/ -v && node --test tests/tweet-parser.test.mjs`. Run after every change. CI runs these on every push to main with coverage uploaded to Codecov. For manual browser testing, load unpacked in Chrome (`chrome://extensions`) or as a temporary add-on in Firefox (`about:debugging#/runtime/this-firefox`) using `manifest.firefox.json`. Chrome extension IDs vary per install; Firefox uses the fixed Gecko ID in `manifest.firefox.json`. Use the matching installer mode (`install.sh ... chrome|firefox`, `install.ps1 -Browser chrome|firefox`).
+- **Testing:** `python3 -m pytest tests/ -v && node --test tests/*.test.mjs`. Run after every change. CI runs these on every push to main with coverage uploaded to Codecov. For manual browser testing, load unpacked in Chrome (`chrome://extensions`) or as a temporary add-on in Firefox (`about:debugging#/runtime/this-firefox`) using `manifest.firefox.json`. Chrome extension IDs vary per install; Firefox uses the fixed Gecko ID in `manifest.firefox.json`. Use the matching installer mode (`install.sh ... chrome|firefox`, `install.ps1 -Browser chrome|firefox`).
 - **Debugging:** Enable "Debug logging to file" in the debug dashboard (popup → "Debug Dashboard"). Logs write to `debug-YYYY-MM-DD.log` in the output directory. Service worker console is visible in each browser's extension debugger. The debug dashboard also shows live capture events with accept/dedup/error status, transport health, and a parser sandbox for testing `extractTweets` against raw JSON.
 - **Dev mode seenIds:** In dev mode, `seenIds` uses `chrome.storage.session` when available (volatile — clears on extension reload). If session storage APIs are unavailable, it safely falls back to `chrome.storage.local`.
 - **tweet-parser.js** is the most fragile file — it handles multiple GraphQL response shapes and X changes their API schema without notice. The recursive fallback (`findInstructionsRecursive`) catches many new endpoint shapes automatically, but field-level changes to tweet objects will need manual updates to `normalizeTweet()`.
@@ -191,7 +191,7 @@ X sometimes returns `TimelineTweet` entries where `tweet_results.result` is miss
 ## Contributing
 
 - Keep it simple. No build tools, no frameworks, no dependencies beyond Python 3 stdlib.
-- Run `python3 -m pytest tests/ -v && node --test tests/tweet-parser.test.mjs` before submitting changes.
+- Run `python3 -m pytest tests/ -v && node --test tests/*.test.mjs` before submitting changes.
 - Every change must maintain zero network footprint. This is the core promise.
 - Stealth constraints are non-negotiable — review the list above before submitting changes.
 - **Update README.md and AGENTS.md after every relevant change** — new features, changed behavior, new config options, output format changes, new endpoints, architectural changes, etc. Both files must stay in sync with the code.
