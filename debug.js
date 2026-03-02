@@ -47,6 +47,8 @@ const eventsBody = document.getElementById('events-body');
 const autoScrollCheckbox = document.getElementById('auto-scroll');
 const clearBtn = document.getElementById('clear-events');
 const eventsWrap = document.querySelector('.events-wrap');
+const traceStorage = chrome.storage.session || chrome.storage.local;
+const traceArea = chrome.storage.session ? 'session' : 'local';
 
 let renderedCount = 0;
 
@@ -80,13 +82,13 @@ function appendEventRow(ev) {
 }
 
 // Load initial events
-chrome.storage.session.get(['lastEvents'], (result) => {
+traceStorage.get(['lastEvents'], (result) => {
   if (result.lastEvents) renderEvents(result.lastEvents);
 });
 
 // Live updates
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'session' && changes.lastEvents) {
+  if (area === traceArea && changes.lastEvents) {
     const events = changes.lastEvents.newValue || [];
     // Re-render if the new batch has fewer (was trimmed) or is a fresh set
     if (events.length <= renderedCount || events.length === 0) {
@@ -104,7 +106,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 clearBtn.addEventListener('click', () => {
   eventsBody.innerHTML = '';
   renderedCount = 0;
-  chrome.storage.session.set({ lastEvents: [] });
+  traceStorage.set({ lastEvents: [] });
 });
 
 // --- Parser sandbox ---
