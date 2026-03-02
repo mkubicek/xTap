@@ -355,7 +355,7 @@ Get-Content ~\.xtap\daemon-stderr.log -Tail 50 -Wait                            
 
 ```bash
 python3 -m pytest tests/test_xtap_core.py -v
-node --test tests/tweet-parser.test.mjs
+node --test tests/*.test.mjs
 ```
 
 CI runs these on every push to `main` with coverage uploaded to [Codecov](https://codecov.io/gh/mkubicek/xTap).
