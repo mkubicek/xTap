@@ -1,9 +1,15 @@
 # xTap — Windows installer for the native messaging host (PowerShell).
-# Usage: .\install.ps1 <chrome-extension-id>
+# Usage:
+#   .\install.ps1 -ExtensionId <id> [-Browser chrome|firefox]
+#   .\install.ps1 -Browser firefox
 
 param(
-    [Parameter(Mandatory=$true, Position=0)]
-    [string]$ExtensionId
+    [Parameter(Mandatory=$false, Position=0)]
+    [string]$ExtensionId,
+
+    [Parameter(Mandatory=$false)]
+    [ValidateSet("chrome", "firefox")]
+    [string]$Browser = "chrome"
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,7 +19,20 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $HostPy = Join-Path $ScriptDir "xtap_host.py"
 $BatPath = Join-Path $ScriptDir "xtap_host.bat"
 $ManifestPath = Join-Path $ScriptDir "$HostName.json"
-$RegKey = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$HostName"
+
+if (-not $ExtensionId -and $Browser -eq "firefox") {
+    $ExtensionId = "xtap@mkubicek.dev"
+}
+if (-not $ExtensionId) {
+    Write-Error "ExtensionId is required for Chrome installs (find it at chrome://extensions)."
+    exit 1
+}
+
+$RegKey = if ($Browser -eq "firefox") {
+    "HKCU:\Software\Mozilla\NativeMessagingHosts\$HostName"
+} else {
+    "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$HostName"
+}
 
 # Verify python
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
@@ -22,13 +41,18 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
 }
 
 # Write manifest (path must point to the .bat wrapper)
-$manifest = @{
+$manifestData = @{
     name = $HostName
     description = "xTap native messaging host -- writes captured tweets to JSONL"
     path = $BatPath
     type = "stdio"
-    allowed_origins = @("chrome-extension://$ExtensionId/")
-} | ConvertTo-Json -Depth 2
+}
+if ($Browser -eq "firefox") {
+    $manifestData.allowed_extensions = @($ExtensionId)
+} else {
+    $manifestData.allowed_origins = @("chrome-extension://$ExtensionId/")
+}
+$manifest = $manifestData | ConvertTo-Json -Depth 2
 
 Set-Content -Path $ManifestPath -Value $manifest -Encoding UTF8
 
@@ -42,6 +66,7 @@ Set-ItemProperty -Path $RegKey -Name "(Default)" -Value $ManifestPath
 Write-Host "Installed native messaging host:"
 Write-Host "  Manifest: $ManifestPath"
 Write-Host "  Registry: $RegKey"
+Write-Host "  Browser: $Browser"
 Write-Host "  Host script: $HostPy"
 Write-Host "  Extension ID: $ExtensionId"
 
