@@ -311,3 +311,171 @@ class TestGetDownloadStatus:
         assert result['status'] == 'done'
         assert result['path'] == '/tmp/video.mp4'
         del xtap_core._downloads['test-done']
+
+
+# ---------------------------------------------------------------------------
+# get_file_stats
+# ---------------------------------------------------------------------------
+
+
+class TestGetFileStats:
+    def test_empty_dir(self, tmp_path):
+        assert xtap_core.get_file_stats(str(tmp_path)) == []
+
+    def test_single_file(self, tmp_path):
+        f = tmp_path / 'tweets-2024-03-10.jsonl'
+        f.write_text(json.dumps({'id': '1'}) + '\n' + json.dumps({'id': '2'}) + '\n')
+        stats = xtap_core.get_file_stats(str(tmp_path))
+        assert len(stats) == 1
+        assert stats[0] == {'date': '2024-03-10', 'count': 2}
+
+    def test_multiple_files_sorted_newest_first(self, tmp_path):
+        (tmp_path / 'tweets-2024-01-01.jsonl').write_text(json.dumps({'id': '1'}) + '\n')
+        (tmp_path / 'tweets-2024-03-15.jsonl').write_text(
+            json.dumps({'id': '2'}) + '\n' + json.dumps({'id': '3'}) + '\n'
+        )
+        (tmp_path / 'tweets-2024-02-10.jsonl').write_text(json.dumps({'id': '4'}) + '\n')
+        stats = xtap_core.get_file_stats(str(tmp_path))
+        assert len(stats) == 3
+        assert stats[0]['date'] == '2024-03-15'
+        assert stats[1]['date'] == '2024-02-10'
+        assert stats[2]['date'] == '2024-01-01'
+
+    def test_blank_lines_not_counted(self, tmp_path):
+        f = tmp_path / 'tweets-2024-01-01.jsonl'
+        f.write_text(json.dumps({'id': '1'}) + '\n\n\n' + json.dumps({'id': '2'}) + '\n')
+        stats = xtap_core.get_file_stats(str(tmp_path))
+        assert stats[0]['count'] == 2
+
+    def test_non_matching_files_ignored(self, tmp_path):
+        (tmp_path / 'debug-2024-01-01.log').write_text('line\n')
+        assert xtap_core.get_file_stats(str(tmp_path)) == []
+
+
+# ---------------------------------------------------------------------------
+# read_tweets
+# ---------------------------------------------------------------------------
+
+
+class TestReadTweets:
+    def test_basic_read(self, tmp_path):
+        f = tmp_path / 'tweets-2024-03-10.jsonl'
+        f.write_text(json.dumps({'id': '1', 'text': 'hello'}) + '\n'
+                     + json.dumps({'id': '2', 'text': 'world'}) + '\n')
+        tweets, scanned, matched = xtap_core.read_tweets(str(tmp_path))
+        assert len(tweets) == 2
+        assert scanned == 2
+        assert matched == 2
+
+    def test_query_filter_case_insensitive(self, tmp_path):
+        f = tmp_path / 'tweets-2024-03-10.jsonl'
+        f.write_text(json.dumps({'id': '1', 'text': 'Hello World'}) + '\n'
+                     + json.dumps({'id': '2', 'text': 'goodbye'}) + '\n')
+        tweets, scanned, matched = xtap_core.read_tweets(str(tmp_path), q='hello')
+        assert len(tweets) == 1
+        assert tweets[0]['text'] == 'Hello World'
+        assert scanned == 2
+        assert matched == 1
+
+    def test_date_filter(self, tmp_path):
+        (tmp_path / 'tweets-2024-03-10.jsonl').write_text(
+            json.dumps({'id': '1', 'text': 'day1'}) + '\n')
+        (tmp_path / 'tweets-2024-03-11.jsonl').write_text(
+            json.dumps({'id': '2', 'text': 'day2'}) + '\n')
+        tweets, scanned, matched = xtap_core.read_tweets(
+            str(tmp_path), date_filter='2024-03-11')
+        assert len(tweets) == 1
+        assert tweets[0]['text'] == 'day2'
+
+    def test_offset_limit(self, tmp_path):
+        # Tweets with timestamps so sorting is deterministic
+        lines = [json.dumps({'id': str(i), 'text': f't{i}',
+                             'created_at': f'2024-03-10T{10+i:02d}:00:00.000Z'})
+                 for i in range(10)]
+        (tmp_path / 'tweets-2024-03-10.jsonl').write_text('\n'.join(lines) + '\n')
+        tweets, scanned, matched = xtap_core.read_tweets(
+            str(tmp_path), offset=3, limit=2)
+        assert len(tweets) == 2
+        assert matched == 10
+        # Sorted newest-first: ids 9,8,7,6,5... offset=3 skips 9,8,7
+        assert tweets[0]['id'] == '6'
+        assert tweets[1]['id'] == '5'
+
+    def test_malformed_json_skipped(self, tmp_path):
+        f = tmp_path / 'tweets-2024-03-10.jsonl'
+        f.write_text('not json\n' + json.dumps({'id': '1', 'text': 'ok'}) + '\n')
+        tweets, scanned, matched = xtap_core.read_tweets(str(tmp_path))
+        assert len(tweets) == 1
+        assert tweets[0]['id'] == '1'
+
+    def test_empty_dir(self, tmp_path):
+        tweets, scanned, matched = xtap_core.read_tweets(str(tmp_path))
+        assert tweets == []
+        assert scanned == 0
+        assert matched == 0
+
+    def test_blank_lines_skipped(self, tmp_path):
+        f = tmp_path / 'tweets-2024-03-10.jsonl'
+        f.write_text('\n' + json.dumps({'id': '1'}) + '\n\n')
+        tweets, scanned, matched = xtap_core.read_tweets(str(tmp_path))
+        assert len(tweets) == 1
+        assert scanned == 1
+
+    def test_author_filter(self, tmp_path):
+        f = tmp_path / 'tweets-2024-03-10.jsonl'
+        f.write_text(
+            json.dumps({'id': '1', 'author': {'username': 'alice'}, 'text': 'hi'}) + '\n'
+            + json.dumps({'id': '2', 'author': {'username': 'bob'}, 'text': 'yo'}) + '\n'
+        )
+        tweets, scanned, matched = xtap_core.read_tweets(
+            str(tmp_path), author='alice')
+        assert len(tweets) == 1
+        assert tweets[0]['author']['username'] == 'alice'
+        assert scanned == 2
+        assert matched == 1
+
+    def test_author_filter_exact_match(self, tmp_path):
+        """Author 'al' should NOT match 'alice'."""
+        f = tmp_path / 'tweets-2024-03-10.jsonl'
+        f.write_text(
+            json.dumps({'id': '1', 'author': {'username': 'alice'}}) + '\n'
+        )
+        tweets, _, matched = xtap_core.read_tweets(str(tmp_path), author='al')
+        assert matched == 0
+
+
+# ---------------------------------------------------------------------------
+# get_authors
+# ---------------------------------------------------------------------------
+
+
+class TestGetAuthors:
+    def test_empty_dir(self, tmp_path):
+        assert xtap_core.get_authors(str(tmp_path)) == []
+
+    def test_extracts_unique_authors(self, tmp_path):
+        f = tmp_path / 'tweets-2024-03-10.jsonl'
+        f.write_text(
+            json.dumps({'id': '1', 'author': {'username': 'bob'}}) + '\n'
+            + json.dumps({'id': '2', 'author': {'username': 'alice'}}) + '\n'
+            + json.dumps({'id': '3', 'author': {'username': 'bob'}}) + '\n'
+        )
+        authors = xtap_core.get_authors(str(tmp_path))
+        assert authors == ['alice', 'bob']
+
+    def test_date_filter(self, tmp_path):
+        (tmp_path / 'tweets-2024-03-10.jsonl').write_text(
+            json.dumps({'id': '1', 'author': {'username': 'alice'}}) + '\n')
+        (tmp_path / 'tweets-2024-03-11.jsonl').write_text(
+            json.dumps({'id': '2', 'author': {'username': 'bob'}}) + '\n')
+        authors = xtap_core.get_authors(str(tmp_path), date_filter='2024-03-11')
+        assert authors == ['bob']
+
+    def test_case_insensitive_sort(self, tmp_path):
+        f = tmp_path / 'tweets-2024-03-10.jsonl'
+        f.write_text(
+            json.dumps({'id': '1', 'author': {'username': 'Zoe'}}) + '\n'
+            + json.dumps({'id': '2', 'author': {'username': 'alice'}}) + '\n'
+        )
+        authors = xtap_core.get_authors(str(tmp_path))
+        assert authors == ['alice', 'Zoe']

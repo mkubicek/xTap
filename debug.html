@@ -27,6 +27,28 @@
       </div>
     </section>
 
+    <section class="panel" id="viewer-panel">
+      <h2>Tweet Viewer</h2>
+      <div id="viewer-unavailable" class="viewer-message" style="display:none">
+        Requires HTTP daemon to browse tweets.
+      </div>
+      <div id="viewer-content" style="display:none">
+        <div class="viewer-stats" id="viewer-stats"></div>
+        <div class="viewer-controls">
+          <input type="text" id="viewer-search" placeholder="Search tweets..." spellcheck="false">
+          <div class="author-combo">
+            <input type="text" id="viewer-author" placeholder="Author..." spellcheck="false" autocomplete="off">
+            <div class="author-dropdown" id="author-dropdown"></div>
+          </div>
+          <select id="viewer-date"><option value="">All dates</option></select>
+          <button id="viewer-refresh" class="small-btn">Refresh</button>
+          <button id="viewer-export" class="small-btn">Export JSONL</button>
+        </div>
+        <div class="viewer-results" id="viewer-results"></div>
+        <div class="viewer-pagination" id="viewer-pagination"></div>
+      </div>
+    </section>
+
     <section class="panel">
       <h2>
         Capture Events

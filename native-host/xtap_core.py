@@ -9,7 +9,7 @@ import subprocess
 import sys
 import threading
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timezone
 
 
 DEFAULT_OUTPUT_DIR = os.environ.get('XTAP_OUTPUT_DIR', os.path.expanduser('~/Downloads/xtap'))
@@ -49,11 +49,90 @@ def resolve_output_dir(msg_dir, default_dir, seen_ids, custom_dirs):
     return out_dir
 
 
+def get_file_stats(out_dir):
+    """Glob tweets-*.jsonl, return list of {date, count} dicts sorted newest-first."""
+    stats = []
+    for path in glob.glob(os.path.join(out_dir, 'tweets-*.jsonl')):
+        basename = os.path.basename(path)
+        # Extract date from tweets-YYYY-MM-DD.jsonl
+        m = re.match(r'tweets-(\d{4}-\d{2}-\d{2})\.jsonl$', basename)
+        if not m:
+            continue
+        with open(path, 'r') as f:
+            count = sum(1 for line in f if line.strip())
+        stats.append({'date': m.group(1), 'count': count})
+    stats.sort(key=lambda s: s['date'], reverse=True)
+    return stats
+
+
+_USERNAME_RE = re.compile(r'"username"\s*:\s*"([^"]+)"')
+
+
+def get_authors(out_dir, date_filter=None):
+    """Extract unique author usernames from JSONL files via regex (no JSON parsing).
+
+    Returns sorted list of usernames.
+    """
+    pattern = (f'tweets-{date_filter}.jsonl' if date_filter
+               else 'tweets-*.jsonl')
+    paths = glob.glob(os.path.join(out_dir, pattern))
+    authors = set()
+    for path in paths:
+        with open(path, 'r') as f:
+            for line in f:
+                m = _USERNAME_RE.search(line)
+                if m:
+                    authors.add(m.group(1))
+    return sorted(authors, key=str.lower)
+
+
+def read_tweets(out_dir, q=None, date_filter=None, author=None,
+                offset=0, limit=100):
+    """Read tweets from JSONL files. Returns (tweets_list, total_scanned, total_matched).
+
+    Optionally filter to a single date file. If q is set, do case-insensitive
+    substring match on the raw line before JSON-parsing (fast path).
+    If author is set, match against "username": "value" in the raw line.
+    Results sorted by created_at descending (newest first).
+    """
+    pattern = (f'tweets-{date_filter}.jsonl' if date_filter
+               else 'tweets-*.jsonl')
+    paths = glob.glob(os.path.join(out_dir, pattern))
+    q_lower = q.lower() if q else None
+    author_needle = f'"username": "{author}"' if author else None
+
+    matched = []
+    total_scanned = 0
+
+    for path in paths:
+        with open(path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                total_scanned += 1
+                if q_lower and q_lower not in line.lower():
+                    continue
+                if author_needle and author_needle not in line:
+                    continue
+                try:
+                    matched.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+
+    matched.sort(key=lambda t: t.get('captured_at') or t.get('created_at') or '', reverse=True)
+    total_matched = len(matched)
+    tweets = matched[offset:offset + limit]
+
+    return tweets, total_scanned, total_matched
+
+
 def write_tweets(tweets, out_dir, seen_ids):
     """Write tweets to JSONL, deduplicating against seen_ids. Returns (count, dupes)."""
     out_file = os.path.join(out_dir, f'tweets-{date.today().isoformat()}.jsonl')
     count = 0
     dupes = 0
+    now = datetime.now(timezone.utc).isoformat()
     with open(out_file, 'a') as f:
         for tweet in tweets:
             tid = tweet.get('id')
@@ -62,7 +141,8 @@ def write_tweets(tweets, out_dir, seen_ids):
                 continue
             if tid:
                 seen_ids.add(tid)
-            f.write(json.dumps(tweet, ensure_ascii=False) + '\n')
+            record = {**tweet, 'captured_at': now}
+            f.write(json.dumps(record, ensure_ascii=False) + '\n')
             count += 1
     return count, dupes
 

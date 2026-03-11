@@ -6,12 +6,14 @@ import os
 import platform
 import signal
 import sys
+import urllib.parse
 import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
                        write_tweets, write_log, write_dump, test_path,
-                       check_ytdlp, start_download, get_download_status)
+                       check_ytdlp, start_download, get_download_status,
+                       get_file_stats, read_tweets, get_authors)
 
 VERSION = '0.18.0'
 BIND_HOST = '127.0.0.1'
@@ -62,10 +64,46 @@ class DaemonHandler(BaseHTTPRequestHandler):
         return True
 
     def do_GET(self):
-        if self.path == '/status':
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == '/status':
             self._send_json({'ok': True, 'version': VERSION})
             return
+        if parsed.path == '/tweets':
+            if not self._check_auth():
+                return
+            self._handle_read_tweets(parsed)
+            return
         self._send_json({'ok': False, 'error': 'Not found'}, 404)
+
+    def _handle_read_tweets(self, parsed):
+        try:
+            params = urllib.parse.parse_qs(parsed.query)
+            q = params.get('q', [None])[0]
+            date_filter = params.get('date', [None])[0]
+            author = params.get('author', [None])[0]
+            offset = int(params.get('offset', [0])[0])
+            limit = int(params.get('limit', [100])[0])
+            out_dir = params.get('outputDir', [DEFAULT_OUTPUT_DIR])[0]
+            out_dir = os.path.expanduser(out_dir)
+
+            tweets, total_scanned, total_matched = read_tweets(
+                out_dir, q=q, date_filter=date_filter, author=author,
+                offset=offset, limit=limit)
+            file_stats = get_file_stats(out_dir)
+            authors = get_authors(out_dir, date_filter=date_filter)
+
+            self._send_json({
+                'ok': True,
+                'tweets': tweets,
+                'total_scanned': total_scanned,
+                'total_matched': total_matched,
+                'returned': len(tweets),
+                'offset': offset,
+                'file_stats': file_stats,
+                'authors': authors,
+            })
+        except Exception as e:
+            self._send_json({'ok': False, 'error': str(e)}, 500)
 
     def do_POST(self):
         if not self._check_auth():

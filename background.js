@@ -531,8 +531,35 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         outputDir,
         debugLogging,
         verboseLogging,
-        transport
+        transport,
+        httpToken,
+        httpPort,
       });
+    })();
+    return true;
+  }
+
+  if (msg.type === 'GET_DAEMON_CREDS') {
+    (async () => {
+      await ready;
+      if (httpToken && httpPort) {
+        sendResponse({ ok: true, token: httpToken, port: httpPort });
+        return;
+      }
+      // Try fresh: ask native host for token, then probe daemon
+      const result = await getTokenViaNative();
+      if (result) {
+        const alive = await probeHttp(result.port, result.token);
+        if (alive) {
+          httpToken = result.token;
+          httpPort = result.port;
+          transport = 'http';
+          await chrome.storage.local.set({ httpToken, httpPort });
+          sendResponse({ ok: true, token: httpToken, port: httpPort });
+          return;
+        }
+      }
+      sendResponse({ ok: false });
     })();
     return true;
   }
@@ -699,9 +726,9 @@ if (typeof chrome.storage.session?.setAccessLevel === 'function') {
 restoreState().catch((e) => {
   console.error('[xTap] Failed to restore state:', e);
 }).then(async () => {
-  readyResolve();
   updateBadge();
   await initTransport();
+  readyResolve();
   function scheduleNextFlush() {
     const jitter = Math.random() * FLUSH_INTERVAL_MS * 0.5;
     flushTimer = setTimeout(() => { scheduledFlush(); scheduleNextFlush(); }, FLUSH_INTERVAL_MS + jitter);

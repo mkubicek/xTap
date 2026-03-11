@@ -29,8 +29,9 @@ background.js (Service Worker, ES module)
 │ xtap_daemon.py (127.0.0.1:17381)                               │
 │   Managed by launchd (macOS), systemd (Linux), Scheduled Task  │
 │   (Windows). Bearer token auth from ~/.xtap/secret             │
-│   Endpoints: GET /status, POST /tweets, /log, /test-path,     │
-│   /check-ytdlp, /download-video, /download-status             │
+│   Endpoints: GET /status, GET /tweets (viewer),               │
+│   POST /tweets, /log, /test-path, /check-ytdlp,              │
+│   /download-video, /download-status                            │
 └────────────────────────────────────────────────────────────────┘
 ┌─── Native messaging (bootstrap + fallback) ───────────────────┐
 │ xtap_host.py (Python, stdio)                                   │
@@ -82,7 +83,7 @@ xTap/
 ├── content-main.js            # MAIN world - fetch/XHR patching
 ├── content-bridge.js          # ISOLATED world - event relay
 ├── popup.html/js/css          # Extension popup (stats, pause/resume, output dir)
-├── debug.html/js/css          # Debug dashboard (live events, transport health, debug/discovery toggles, parser sandbox)
+├── debug.html/js/css          # Debug dashboard (tweet viewer, live events, transport health, debug/discovery toggles, parser sandbox)
 ├── icons/                     # Extension icons (16, 48, 128)
 ├── lib/
 │   └── tweet-parser.js        # GraphQL response → normalized tweet objects
