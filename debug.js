@@ -224,7 +224,7 @@ function renderTweetCards(tweets) {
     const username = author.username || author.screen_name || '?';
     const capturedTime = relativeTime(t.captured_at);
     const postedTime = relativeTime(t.created_at);
-    const timeLabel = capturedTime ? `captured ${capturedTime}` : postedTime;
+    const timeLabel = [postedTime, capturedTime ? `captured ${capturedTime}` : ''].filter(Boolean).join(' · ');
     const endpoint = t.endpoint || '';
     const text = t.text || t.full_text || '';
     const isLong = text.length > 280;
