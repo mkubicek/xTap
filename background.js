@@ -358,11 +358,11 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
     }
 
     // Article tweets bypass dedup — they enrich a previously captured stub
-    if (seenIds.has(tweet.id) && !tweet.is_article) {
+    if (tweet.id && seenIds.has(tweet.id) && !tweet.is_article) {
       emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'DEDUPLICATED', reason: 'seenIds' });
       continue;
     }
-    seenIds.add(tweet.id);
+    if (tweet.id) seenIds.add(tweet.id);
     buffer.push(tweet);
     newCount++;
     emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'ACCEPTED', reason: null });

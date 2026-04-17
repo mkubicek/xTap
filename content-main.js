@@ -12,6 +12,7 @@
   (document.head || document.documentElement).appendChild(beacon);
 
   const xhrUrls = new WeakMap();
+  const xhrPatched = new WeakSet();
 
   function extractEndpoint(url) {
     try {
@@ -58,12 +59,15 @@
     const urlStr = (typeof url === 'string') ? url : url?.toString();
     if (urlStr && urlStr.includes(GRAPHQL_PATTERN)) {
       xhrUrls.set(this, urlStr);
-      this.addEventListener('load', function () {
-        try {
-          const data = JSON.parse(this.responseText);
-          dispatchData(xhrUrls.get(this), data);
-        } catch (_) {}
-      });
+      if (!xhrPatched.has(this)) {
+        xhrPatched.add(this);
+        this.addEventListener('load', function () {
+          try {
+            const data = JSON.parse(this.responseText);
+            dispatchData(xhrUrls.get(this), data);
+          } catch (_) {}
+        });
+      }
     }
     return nativeOpen.call(this, method, url, ...rest);
   };
