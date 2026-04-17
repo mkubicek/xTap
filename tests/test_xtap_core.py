@@ -340,7 +340,8 @@ class TestTestPath:
 
     def test_no_leftover_file(self, tmp_path):
         xtap_core.test_path(str(tmp_path))
-        assert not (tmp_path / '.xtap-write-test').exists()
+        leftover = [f for f in os.listdir(str(tmp_path)) if f.startswith('.xtap-write-test')]
+        assert leftover == [], f'Sentinel not cleaned up: {leftover}'
 
 
 # ---------------------------------------------------------------------------
