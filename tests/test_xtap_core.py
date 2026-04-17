@@ -315,6 +315,14 @@ class TestWriteDump:
         with pytest.raises(ValueError, match='Invalid dump filename'):
             xtap_core.write_dump('', 'data', str(tmp_path))
 
+    def test_dot_filename_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match='Invalid dump filename'):
+            xtap_core.write_dump('.', 'data', str(tmp_path))
+
+    def test_dotdot_filename_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match='Invalid dump filename'):
+            xtap_core.write_dump('..', 'data', str(tmp_path))
+
 
 # ---------------------------------------------------------------------------
 # test_path

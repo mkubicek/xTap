@@ -109,7 +109,7 @@ def write_dump(filename, content, out_dir):
     """Write a raw JSON dump file for discovery/debugging."""
     # Strip path components — only the basename is allowed
     safe_name = os.path.basename(filename)
-    if not safe_name:
+    if not safe_name or safe_name in ('.', '..'):
         raise ValueError(f'Invalid dump filename: {filename!r}')
     dump_file = os.path.join(out_dir, safe_name)
     with open(dump_file, 'w') as f:
