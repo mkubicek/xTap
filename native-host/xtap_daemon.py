@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """xTap HTTP Daemon — runs as a system service (launchd/systemd/Scheduled Task)."""
 
+import hmac
 import json
 import os
 import platform
@@ -17,6 +18,7 @@ from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
 VERSION = '0.19.1'
 BIND_HOST = '127.0.0.1'
 BIND_PORT = 17381
+MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
 XTAP_DIR = os.path.expanduser('~/.xtap')
 XTAP_SECRET = os.path.join(XTAP_DIR, 'secret')
 
@@ -62,15 +64,14 @@ class DaemonHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
         log_debug(f'  -> {status} ({len(body)} bytes)')
 
-    def _read_json(self):
-        length = int(self.headers.get('Content-Length', 0))
+    def _read_json(self, length):
         if length == 0:
             return {}
         return json.loads(self.rfile.read(length))
 
     def _check_auth(self):
         auth = self.headers.get('Authorization', '')
-        if not auth.startswith('Bearer ') or auth[7:] != _token:
+        if not auth.startswith('Bearer ') or not hmac.compare_digest(auth[7:], _token):
             log_debug(f'  Auth failed (header {"present" if auth else "missing"})')
             self._send_json({'ok': False, 'error': 'Unauthorized'}, 401)
             return False
@@ -83,13 +84,37 @@ class DaemonHandler(BaseHTTPRequestHandler):
             return
         self._send_json({'ok': False, 'error': 'Not found'}, 404)
 
+    def _validate_content_length(self):
+        """Validate Content-Length header. Returns length or -1 on error (response already sent)."""
+        raw = self.headers.get('Content-Length')
+        if raw is None:
+            self._send_json({'ok': False, 'error': 'Missing Content-Length header'}, 400)
+            return -1
+        try:
+            length = int(raw)
+        except ValueError:
+            self._send_json({'ok': False, 'error': f'Invalid Content-Length: {raw!r}'}, 400)
+            return -1
+        if length < 0:
+            self._send_json({'ok': False, 'error': 'Content-Length must not be negative'}, 400)
+            return -1
+        if length > MAX_BODY_SIZE:
+            self._send_json({'ok': False, 'error': 'Payload too large'}, 413)
+            return -1
+        return length
+
     def do_POST(self):
-        log_debug(f'POST {self.path} (Content-Length: {self.headers.get("Content-Length", "0")})')
+        log_debug(f'POST {self.path} (Content-Length: {self.headers.get("Content-Length", "?")})')
+
+        length = self._validate_content_length()
+        if length < 0:
+            return
+
         if not self._check_auth():
             return
 
         try:
-            body = self._read_json()
+            body = self._read_json(length)
         except (json.JSONDecodeError, ValueError) as e:
             self._send_json({'ok': False, 'error': f'Invalid JSON: {e}'}, 400)
             return
