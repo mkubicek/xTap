@@ -43,6 +43,10 @@ function createMockStorage(opts = {}) {
     },
     set(items) {
       if (opts.throwOnSet) return Promise.reject(new Error('QuotaExceededError'));
+      if (opts.throwOnStagingWrite && Object.keys(items).some(k => k.startsWith('stg_')))
+        return Promise.reject(new Error('QuotaExceededError'));
+      if (opts.throwOnBufferWrite && 'tweetBuffer' in items)
+        return Promise.reject(new Error('QuotaExceededError'));
       Object.assign(data, items);
       return Promise.resolve();
     },
@@ -123,9 +127,17 @@ describe('stagePayload + clearStagedPayload', () => {
   });
 
   it('returns null on quota error', async () => {
-    const env = setup({ sessionOpts: { throwOnSet: true } });
+    const env = setup({ sessionOpts: { throwOnStagingWrite: true } });
     const key = await env.stagePayload('HomeTimeline', { foo: 1 });
     assert.equal(key, null);
+  });
+
+  it('emits STAGE_FAILED trace event on quota error', async () => {
+    const env = setup({ sessionOpts: { throwOnStagingWrite: true } });
+    await env.stagePayload('HomeTimeline', { foo: 1 });
+    const failEvents = env.traceEvents.filter(e => e.status === 'STAGE_FAILED');
+    assert.equal(failEvents.length, 1);
+    assert.equal(failEvents[0].endpoint, 'HomeTimeline');
   });
 });
 
@@ -237,6 +249,26 @@ describe('saveState / restoreState buffer persistence', () => {
     assert.ok(env.seenIds.has('1'));
     assert.ok(env.seenIds.has('2'));
     assert.ok(env.seenIds.has('3'));
+  });
+
+  it('seenIds persists even when buffer write fails (decoupled)', async () => {
+    const env = setup({ sessionOpts: { throwOnBufferWrite: true } });
+
+    env.buffer = [{ id: '1', text: 'buffered' }];
+    env.seenIds = new Set(['1', '2']);
+
+    await env.saveState();
+
+    env.buffer = [];
+    env.seenIds = new Set();
+
+    await env.restoreState();
+
+    // seenIds must survive despite buffer write failure
+    assert.ok(env.seenIds.has('1'));
+    assert.ok(env.seenIds.has('2'));
+    // buffer was not persisted
+    assert.equal(env.buffer.length, 0);
   });
 });
 

@@ -44,6 +44,10 @@ function seenIdsStorage() {
   return (isDevMode && hasSessionStorage) ? chrome.storage.session : chrome.storage.local;
 }
 
+// Staging uses session whenever available (ephemeral — cleared on browser restart).
+// seenIdsStorage() uses session only in dev mode. In production, seenIds goes to
+// local for persistence while WAL entries stay in session (they only need to survive
+// SW suspension, not browser restart). Firefox without session falls back to local.
 function stagingStorage() {
   return hasSessionStorage ? chrome.storage.session : chrome.storage.local;
 }
@@ -55,6 +59,7 @@ async function stagePayload(endpoint, data) {
     return key;
   } catch (e) {
     console.warn('[xTap] Failed to stage payload (quota?):', e.message);
+    emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: null, status: 'STAGE_FAILED', reason: e.message });
     return null;
   }
 }
@@ -63,7 +68,9 @@ async function clearStagedPayload(key) {
   if (!key) return;
   try {
     await stagingStorage().remove(key);
-  } catch {}
+  } catch (e) {
+    console.warn('[xTap] Failed to clear staged payload:', e.message);
+  }
 }
 
 async function recoverStagedPayloads() {
@@ -74,7 +81,11 @@ async function recoverStagedPayloads() {
     console.warn('[xTap] Failed to read staging storage for recovery:', e.message);
     return;
   }
-  const keys = Object.keys(store).filter(k => k.startsWith('stg_')).sort();
+  const keys = Object.keys(store).filter(k => k.startsWith('stg_')).sort((a, b) => {
+    const [, tsA, seqA] = a.split('_');
+    const [, tsB, seqB] = b.split('_');
+    return (tsA - tsB) || (seqA - seqB);
+  });
   if (keys.length === 0) return;
 
   const now = Date.now();
@@ -83,6 +94,7 @@ async function recoverStagedPayloads() {
 
   for (const key of keys) {
     const entry = store[key];
+    let produced = false;
     try {
       if (!entry || !entry.data || (entry.stagedAt && now - entry.stagedAt > TTL)) {
         await clearStagedPayload(key);
@@ -93,29 +105,40 @@ async function recoverStagedPayloads() {
       if (tweets.length > 0) {
         enqueueTweets(tweets, entry.endpoint);
         recoveredCount += tweets.length;
+        produced = true;
       }
     } catch (e) {
       console.warn(`[xTap] Recovery parse error for ${key}:`, e.message);
     }
+    // Persist buffer before clearing WAL entry — if SW dies mid-recovery,
+    // already-cleared entries must have their tweets in durable storage.
+    if (produced) await saveState();
     await clearStagedPayload(key);
   }
 
   if (recoveredCount > 0) {
-    await saveState();
     emitTraceEvent({ timestamp: Date.now(), endpoint: 'recovery', tweetId: null, status: 'RECOVERY_COMPLETE', reason: `recovered ${recoveredCount} tweets from ${keys.length} staged payloads` });
     console.log(`[xTap] Recovery: ${recoveredCount} tweets from ${keys.length} staged payloads`);
   }
 }
 
 async function saveState() {
-  const seenData = { seenIds: [...seenIds].slice(-MAX_SEEN_IDS), tweetBuffer: buffer };
+  // seenIds and tweetBuffer are separate writes so a quota failure on the
+  // (potentially large) buffer doesn't take down dedup state with it.
+  const seenArr = [...seenIds].slice(-MAX_SEEN_IDS);
+  const bufferWrite = seenIdsStorage().set({ tweetBuffer: buffer }).catch(e =>
+    console.warn('[xTap] Failed to persist buffer:', e.message));
   if (isDevMode && hasSessionStorage) {
     await Promise.all([
-      chrome.storage.session.set(seenData),
+      chrome.storage.session.set({ seenIds: seenArr }),
+      bufferWrite,
       chrome.storage.local.set({ allTimeCount, captureEnabled }),
     ]);
   } else {
-    await chrome.storage.local.set({ ...seenData, allTimeCount, captureEnabled });
+    await Promise.all([
+      chrome.storage.local.set({ seenIds: seenArr, allTimeCount, captureEnabled }),
+      bufferWrite,
+    ]);
   }
 }
 
@@ -456,8 +479,6 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
     console.warn(`[xTap] Buffer overflow: dropped ${overflow} oldest tweets (cap: ${MAX_BUFFER_SIZE})`);
     emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: null, status: 'BUFFER_OVERFLOW', reason: `dropped ${overflow}` });
   }
-
-  if (buffer.length >= BATCH_SIZE) flush();
 }
 
 // --- Badge ---
@@ -554,13 +575,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'GRAPHQL_RESPONSE') {
     if (IGNORED_ENDPOINTS.has(msg.endpoint)) return;
     (async () => {
-      const stageKey = await stagePayload(msg.endpoint, msg.data);
       await ready;
       verboseLog(msg.endpoint, msg.data);
-      if (!captureEnabled) {
-        await clearStagedPayload(stageKey);
-        return;
-      }
+      if (!captureEnabled) return;
+      // Stage after ready + captureEnabled so we never WAL payloads that
+      // arrived while capture was off, and recovery can replay unconditionally.
+      // Staging after ready also means recovery completes before any handler
+      // can stage — no concurrent-mutation race.
+      const stageKey = await stagePayload(msg.endpoint, msg.data);
       try {
         const tweets = extractTweets(msg.endpoint, msg.data);
         for (const t of tweets) t.source_endpoint = msg.endpoint;
@@ -575,6 +597,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           await saveState();
         }
         await clearStagedPayload(stageKey);
+        // Flush after WAL commit so buffer.splice in flush() can't race with
+        // the persist-then-clear sequence above.
+        if (buffer.length >= BATCH_SIZE) flush();
       } catch (e) {
         console.error(`[xTap] Parse error for ${msg.endpoint}:`, e, '| data keys:', Object.keys(msg.data || {}).join(', '));
         emitTraceEvent({ timestamp: Date.now(), endpoint: msg.endpoint, tweetId: null, status: 'PARSER_ERROR', reason: e.message });
