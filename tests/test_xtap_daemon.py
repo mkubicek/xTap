@@ -229,3 +229,13 @@ class TestAuthorizedRequest:
         assert resp.status == 200
         assert body['ok'] is True
         conn.close()
+
+    def test_dump_rejects_dotdot_filename(self, daemon_url):
+        """POST /dump with '..' filename should return 400."""
+        status, body = _post(
+            daemon_url, '/dump',
+            body={'filename': '..', 'content': 'x'},
+            token=TEST_TOKEN,
+        )
+        assert status == 400
+        assert 'Invalid dump filename' in body['error']
