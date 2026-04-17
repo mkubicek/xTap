@@ -196,17 +196,11 @@ class TestAuthorizedRequest:
         assert body['ok'] is True
         assert 'version' in body
 
-    def test_valid_post_succeeds(self, daemon_url, tmp_path, monkeypatch):
+    def test_valid_post_succeeds(self, daemon_url, tmp_path):
         """An authorized POST /tweets with valid body should succeed."""
-        monkeypatch.setattr(xtap_daemon, '_seen_ids', set())
-        monkeypatch.setattr(xtap_daemon, '_custom_dirs', set())
-        # Point resolve_output_dir to tmp_path
-        import xtap_core
-        monkeypatch.setattr(xtap_core, 'DEFAULT_OUTPUT_DIR', str(tmp_path))
-
         status, body = _post(
             daemon_url, '/tweets',
-            body={'tweets': [{'id': '1', 'text': 'hello'}]},
+            body={'outputDir': str(tmp_path), 'tweets': [{'id': '1', 'text': 'hello'}]},
             token=TEST_TOKEN,
         )
         assert status == 200
