@@ -59,7 +59,7 @@ async function restoreState() {
     seenIdsStorage().get(['seenIds']),
     chrome.storage.local.get(['allTimeCount', 'captureEnabled', 'outputDir', 'debugLogging', 'verboseLogging']),
   ]);
-  if (seenStored.seenIds) seenIds = new Set(seenStored.seenIds);
+  if (seenStored.seenIds) seenIds = new Set(seenStored.seenIds.filter(Boolean));
   if (typeof stored.allTimeCount === 'number') allTimeCount = stored.allTimeCount;
   if (typeof stored.captureEnabled === 'boolean') captureEnabled = stored.captureEnabled;
   if (typeof stored.outputDir === 'string') outputDir = stored.outputDir;
