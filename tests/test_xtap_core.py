@@ -299,6 +299,22 @@ class TestWriteDump:
         xtap_core.write_dump('test.json', 'new', str(tmp_path))
         assert (tmp_path / 'test.json').read_text() == 'new'
 
+    def test_traversal_filename_stripped(self, tmp_path):
+        path = xtap_core.write_dump('../../.ssh/authorized_keys', 'data', str(tmp_path))
+        # Traversal stripped — writes to out_dir/authorized_keys
+        assert path == os.path.join(str(tmp_path), 'authorized_keys')
+        assert (tmp_path / 'authorized_keys').read_text() == 'data'
+
+    def test_absolute_filename_stripped(self, tmp_path):
+        path = xtap_core.write_dump('/etc/cron.d/evil', 'data', str(tmp_path))
+        # Should write to out_dir/evil, not /etc/cron.d/evil
+        assert path == os.path.join(str(tmp_path), 'evil')
+        assert (tmp_path / 'evil').read_text() == 'data'
+
+    def test_empty_filename_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match='Invalid dump filename'):
+            xtap_core.write_dump('', 'data', str(tmp_path))
+
 
 # ---------------------------------------------------------------------------
 # test_path
