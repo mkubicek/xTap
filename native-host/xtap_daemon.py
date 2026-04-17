@@ -11,7 +11,8 @@ import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
-                       write_tweets, write_log, write_dump, test_path,
+                       validate_output_dir, write_tweets, write_log,
+                       write_dump, test_path,
                        check_ytdlp, start_download, get_download_status)
 
 VERSION = '0.19.1'
@@ -122,6 +123,8 @@ class DaemonHandler(BaseHTTPRequestHandler):
             count, dupes = write_tweets(tweets, out_dir, _seen_ids)
             log_debug(f'  Tweets: {count} written, {dupes} dupes -> {out_dir}')
             self._send_json({'ok': True, 'count': count, 'dupes': dupes})
+        except ValueError as e:
+            self._send_json({'ok': False, 'error': str(e)}, 400)
         except Exception as e:
             log_info(f'ERROR /tweets: {e}')
             log_debug(f'  Traceback: {_format_exc()}')
@@ -134,6 +137,8 @@ class DaemonHandler(BaseHTTPRequestHandler):
             lines = body.get('lines', [])
             logged = write_log(lines, out_dir)
             self._send_json({'ok': True, 'logged': logged})
+        except ValueError as e:
+            self._send_json({'ok': False, 'error': str(e)}, 400)
         except Exception as e:
             log_info(f'ERROR /log: {e}')
             log_debug(f'  Traceback: {_format_exc()}')
@@ -147,6 +152,8 @@ class DaemonHandler(BaseHTTPRequestHandler):
             content = body.get('content', '')
             path = write_dump(filename, content, out_dir)
             self._send_json({'ok': True, 'path': path})
+        except ValueError as e:
+            self._send_json({'ok': False, 'error': str(e)}, 400)
         except Exception as e:
             log_info(f'ERROR /dump: {e}')
             log_debug(f'  Traceback: {_format_exc()}')
@@ -158,9 +165,11 @@ class DaemonHandler(BaseHTTPRequestHandler):
             if not msg_dir:
                 self._send_json({'ok': False, 'error': 'outputDir is required'}, 400)
                 return
-            out_dir = os.path.expanduser(msg_dir)
+            out_dir = validate_output_dir(os.path.expanduser(msg_dir))
             test_path(out_dir)
             self._send_json({'ok': True, 'type': 'TEST_PATH'})
+        except ValueError as e:
+            self._send_json({'ok': False, 'error': str(e)}, 400)
         except Exception as e:
             log_info(f'ERROR /test-path: {e}')
             self._send_json({'ok': False, 'error': str(e)}, 500)
@@ -181,6 +190,8 @@ class DaemonHandler(BaseHTTPRequestHandler):
             start_download(download_id, tweet_url, direct_url, out_dir, post_date)
             log_debug(f'  Download started: {download_id} -> {tweet_url}')
             self._send_json({'ok': True, 'downloadId': download_id})
+        except ValueError as e:
+            self._send_json({'ok': False, 'error': str(e)}, 400)
         except Exception as e:
             log_info(f'ERROR /download-video: {e}')
             self._send_json({'ok': False, 'error': str(e)}, 500)

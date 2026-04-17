@@ -14,6 +14,35 @@ from datetime import date
 
 DEFAULT_OUTPUT_DIR = os.environ.get('XTAP_OUTPUT_DIR', os.path.expanduser('~/Downloads/xtap'))
 
+# Allowed roots for outputDir validation: user's home + DEFAULT_OUTPUT_DIR
+# (the latter covers XTAP_OUTPUT_DIR pointing outside home, e.g. /data/xtap)
+_ALLOWED_ROOTS = tuple(dict.fromkeys([
+    os.path.realpath(os.path.expanduser('~')),
+    os.path.realpath(DEFAULT_OUTPUT_DIR),
+]))
+
+
+def validate_output_dir(path):
+    """Validate that a resolved path is under an allowed root directory.
+
+    Args:
+        path: The path to validate (should already be expanduser'd).
+
+    Returns:
+        The realpath-resolved path.
+
+    Raises:
+        ValueError: If the path resolves outside all allowed roots.
+    """
+    resolved = os.path.realpath(path)
+    for root in _ALLOWED_ROOTS:
+        # Append os.sep so '/home/userX' doesn't match root '/home/user'
+        if resolved == root or resolved.startswith(root + os.sep):
+            return resolved
+    raise ValueError(
+        f'outputDir resolves outside allowed directories: {resolved}'
+    )
+
 
 def load_seen_ids(out_dir):
     """Build a set of tweet IDs from all existing JSONL files in the output directory."""
@@ -39,7 +68,7 @@ def resolve_output_dir(msg_dir, default_dir, seen_ids, custom_dirs):
     Returns the resolved output directory path.
     """
     if msg_dir:
-        out_dir = os.path.expanduser(msg_dir)
+        out_dir = validate_output_dir(os.path.expanduser(msg_dir))
         os.makedirs(out_dir, exist_ok=True)
         if out_dir != default_dir and out_dir not in custom_dirs:
             seen_ids.update(load_seen_ids(out_dir))
