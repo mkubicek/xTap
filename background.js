@@ -7,6 +7,7 @@ const BATCH_SIZE = 50;
 const FLUSH_INTERVAL_MS = 30_000;
 const MAX_SEEN_IDS = 50_000;
 const HTTP_TIMEOUT_MS = 10_000;
+const MAX_BUFFER_SIZE = 2000;
 
 let captureEnabled = true;
 let buffer = [];
@@ -21,6 +22,7 @@ let logBuffer = [];
 const isDevMode = !chrome.runtime.getManifest().update_url;
 const hasSessionStorage = !!chrome.storage.session;
 const traceStorage = chrome.storage.session || chrome.storage.local;
+let stageSeq = 0;
 let readyResolve;
 const ready = new Promise(r => { readyResolve = r; });
 
@@ -42,8 +44,71 @@ function seenIdsStorage() {
   return (isDevMode && hasSessionStorage) ? chrome.storage.session : chrome.storage.local;
 }
 
+function stagingStorage() {
+  return hasSessionStorage ? chrome.storage.session : chrome.storage.local;
+}
+
+async function stagePayload(endpoint, data) {
+  const key = `stg_${Date.now()}_${stageSeq++}`;
+  try {
+    await stagingStorage().set({ [key]: { endpoint, data, stagedAt: Date.now() } });
+    return key;
+  } catch (e) {
+    console.warn('[xTap] Failed to stage payload (quota?):', e.message);
+    return null;
+  }
+}
+
+async function clearStagedPayload(key) {
+  if (!key) return;
+  try {
+    await stagingStorage().remove(key);
+  } catch {}
+}
+
+async function recoverStagedPayloads() {
+  let store;
+  try {
+    store = await stagingStorage().get(null);
+  } catch (e) {
+    console.warn('[xTap] Failed to read staging storage for recovery:', e.message);
+    return;
+  }
+  const keys = Object.keys(store).filter(k => k.startsWith('stg_')).sort();
+  if (keys.length === 0) return;
+
+  const now = Date.now();
+  const TTL = 24 * 60 * 60 * 1000;
+  let recoveredCount = 0;
+
+  for (const key of keys) {
+    const entry = store[key];
+    try {
+      if (!entry || !entry.data || (entry.stagedAt && now - entry.stagedAt > TTL)) {
+        await clearStagedPayload(key);
+        continue;
+      }
+      const tweets = extractTweets(entry.endpoint, entry.data);
+      for (const t of tweets) t.source_endpoint = entry.endpoint;
+      if (tweets.length > 0) {
+        enqueueTweets(tweets, entry.endpoint);
+        recoveredCount += tweets.length;
+      }
+    } catch (e) {
+      console.warn(`[xTap] Recovery parse error for ${key}:`, e.message);
+    }
+    await clearStagedPayload(key);
+  }
+
+  if (recoveredCount > 0) {
+    await saveState();
+    emitTraceEvent({ timestamp: Date.now(), endpoint: 'recovery', tweetId: null, status: 'RECOVERY_COMPLETE', reason: `recovered ${recoveredCount} tweets from ${keys.length} staged payloads` });
+    console.log(`[xTap] Recovery: ${recoveredCount} tweets from ${keys.length} staged payloads`);
+  }
+}
+
 async function saveState() {
-  const seenData = { seenIds: [...seenIds].slice(-MAX_SEEN_IDS) };
+  const seenData = { seenIds: [...seenIds].slice(-MAX_SEEN_IDS), tweetBuffer: buffer };
   if (isDevMode && hasSessionStorage) {
     await Promise.all([
       chrome.storage.session.set(seenData),
@@ -56,10 +121,11 @@ async function saveState() {
 
 async function restoreState() {
   const [seenStored, stored] = await Promise.all([
-    seenIdsStorage().get(['seenIds']),
+    seenIdsStorage().get(['seenIds', 'tweetBuffer']),
     chrome.storage.local.get(['allTimeCount', 'captureEnabled', 'outputDir', 'debugLogging', 'verboseLogging']),
   ]);
   if (seenStored.seenIds) seenIds = new Set(seenStored.seenIds.filter(Boolean));
+  if (Array.isArray(seenStored.tweetBuffer)) buffer = seenStored.tweetBuffer;
   if (typeof stored.allTimeCount === 'number') allTimeCount = stored.allTimeCount;
   if (typeof stored.captureEnabled === 'boolean') captureEnabled = stored.captureEnabled;
   if (typeof stored.outputDir === 'string') outputDir = stored.outputDir;
@@ -314,12 +380,14 @@ async function flush() {
       if (!resp || !resp.ok) {
         console.error('[xTap] Host rejected tweets:', resp?.error || 'no response');
         buffer.unshift(...batch);
+        saveState();
       } else {
         saveState();
       }
     } catch (e) {
       console.error('[xTap] Send failed, buffering tweets back:', e);
       buffer.unshift(...batch);
+      saveState();
     }
   }
 
@@ -381,6 +449,13 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
   sessionCount += newCount;
   allTimeCount += newCount;
   updateBadge();
+
+  if (buffer.length > MAX_BUFFER_SIZE) {
+    const overflow = buffer.length - MAX_BUFFER_SIZE;
+    buffer.splice(0, overflow);
+    console.warn(`[xTap] Buffer overflow: dropped ${overflow} oldest tweets (cap: ${MAX_BUFFER_SIZE})`);
+    emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: null, status: 'BUFFER_OVERFLOW', reason: `dropped ${overflow}` });
+  }
 
   if (buffer.length >= BATCH_SIZE) flush();
 }
@@ -477,12 +552,13 @@ const IGNORED_ENDPOINTS = new Set([
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'GRAPHQL_RESPONSE') {
+    if (IGNORED_ENDPOINTS.has(msg.endpoint)) return;
     (async () => {
+      const stageKey = await stagePayload(msg.endpoint, msg.data);
       await ready;
       verboseLog(msg.endpoint, msg.data);
-      if (!captureEnabled) return;
-      if (IGNORED_ENDPOINTS.has(msg.endpoint)) {
-        if (verboseLogging) console.log(`[xTap:verbose] ${msg.endpoint} (ignored)`);
+      if (!captureEnabled) {
+        await clearStagedPayload(stageKey);
         return;
       }
       try {
@@ -496,10 +572,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (missingText > 0) warn += ` | ${missingText} missing text`;
           console.log(`[xTap] ${msg.endpoint}: ${tweets.length} tweets${warn}`);
           enqueueTweets(tweets, msg.endpoint);
+          await saveState();
         }
+        await clearStagedPayload(stageKey);
       } catch (e) {
         console.error(`[xTap] Parse error for ${msg.endpoint}:`, e, '| data keys:', Object.keys(msg.data || {}).join(', '));
         emitTraceEvent({ timestamp: Date.now(), endpoint: msg.endpoint, tweetId: null, status: 'PARSER_ERROR', reason: e.message });
+        await clearStagedPayload(stageKey);
       }
     })();
     return;
@@ -667,6 +746,7 @@ if (typeof chrome.storage.session?.setAccessLevel === 'function') {
 restoreState().catch((e) => {
   console.error('[xTap] Failed to restore state:', e);
 }).then(async () => {
+  await recoverStagedPayloads();
   readyResolve();
   updateBadge();
   await initTransport();
