@@ -196,16 +196,22 @@ class TestAuthorizedRequest:
         assert body['ok'] is True
         assert 'version' in body
 
-    def test_valid_post_succeeds(self, daemon_url, tmp_path):
+    def test_valid_post_succeeds(self, daemon_url):
         """An authorized POST /tweets with valid body should succeed."""
-        status, body = _post(
-            daemon_url, '/tweets',
-            body={'outputDir': str(tmp_path), 'tweets': [{'id': '1', 'text': 'hello'}]},
-            token=TEST_TOKEN,
-        )
-        assert status == 200
-        assert body['ok'] is True
-        assert body['count'] == 1
+        import tempfile
+        out_dir = tempfile.mkdtemp(dir=os.path.expanduser('~'), prefix='.xtap-test-')
+        try:
+            status, body = _post(
+                daemon_url, '/tweets',
+                body={'outputDir': out_dir, 'tweets': [{'id': '1', 'text': 'hello'}]},
+                token=TEST_TOKEN,
+            )
+            assert status == 200
+            assert body['ok'] is True
+            assert body['count'] == 1
+        finally:
+            import shutil
+            shutil.rmtree(out_dir, ignore_errors=True)
 
     def test_zero_content_length_post(self, daemon_url):
         """POST with Content-Length: 0 exercises _read_json returning {}."""
