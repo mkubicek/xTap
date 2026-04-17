@@ -120,10 +120,15 @@ def write_dump(filename, content, out_dir):
 def test_path(out_dir):
     """Test that we can write to the output directory. Raises on failure."""
     os.makedirs(out_dir, exist_ok=True)
-    test_file = os.path.join(out_dir, '.xtap-write-test')
-    with open(test_file, 'w') as f:
-        f.write('ok')
-    os.remove(test_file)
+    test_file = os.path.join(out_dir, f'.xtap-write-test-{threading.get_ident()}')
+    try:
+        with open(test_file, 'w') as f:
+            f.write('ok')
+    finally:
+        try:
+            os.remove(test_file)
+        except FileNotFoundError:
+            pass
 
 
 # --- Video download ---

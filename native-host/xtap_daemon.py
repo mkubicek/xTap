@@ -178,9 +178,9 @@ class DaemonHandler(BaseHTTPRequestHandler):
             msg_dir = body.get('outputDir', '').strip()
             with _state_lock:
                 out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
-            filename = body.get('filename', 'dump.json')
-            content = body.get('content', '')
-            path = write_dump(filename, content, out_dir)
+                filename = body.get('filename', 'dump.json')
+                content = body.get('content', '')
+                path = write_dump(filename, content, out_dir)
             self._send_json({'ok': True, 'path': path})
         except ValueError as e:
             self._send_json({'ok': False, 'error': str(e)}, 400)
