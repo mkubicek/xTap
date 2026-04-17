@@ -131,6 +131,7 @@ def test_path(out_dir):
 _ytdlp_path = None
 _ytdlp_checked = False
 _downloads = {}
+_downloads_lock = threading.Lock()
 
 
 def check_ytdlp():  # pragma: no cover
@@ -144,15 +145,16 @@ def check_ytdlp():  # pragma: no cover
 
 def get_download_status(download_id):
     """Return current state of a download."""
-    info = _downloads.get(download_id)
-    if not info:
-        return {'status': 'unknown'}
-    return {
-        'status': info['status'],
-        'progress': info.get('progress'),
-        'path': info.get('path'),
-        'error': info.get('error'),
-    }
+    with _downloads_lock:
+        info = _downloads.get(download_id)
+        if not info:
+            return {'status': 'unknown'}
+        return {
+            'status': info['status'],
+            'progress': info.get('progress'),
+            'path': info.get('path'),
+            'error': info.get('error'),
+        }
 
 
 def _date_prefix(post_date):
@@ -184,32 +186,37 @@ def start_download(download_id, tweet_url, direct_url, out_dir, post_date=''):  
     video_dir = os.path.join(out_dir, 'videos')
     os.makedirs(video_dir, exist_ok=True)
 
-    _downloads[download_id] = {
-        'status': 'downloading',
-        'progress': None,
-        'path': None,
-        'error': None,
-    }
+    with _downloads_lock:
+        _downloads[download_id] = {
+            'status': 'downloading',
+            'progress': None,
+            'path': None,
+            'error': None,
+        }
 
     def run():
         try:
             if check_ytdlp():
                 _download_with_ytdlp(download_id, tweet_url, video_dir, post_date)
             elif direct_url:
-                _downloads[download_id]['progress'] = 0
+                with _downloads_lock:
+                    _downloads[download_id]['progress'] = 0
                 # Extract tweet ID from URL
                 m = re.search(r'/status/(\d+)', tweet_url)
                 tweet_id = m.group(1) if m else download_id
                 path = download_direct(direct_url, tweet_id, video_dir, post_date)
-                _downloads[download_id]['progress'] = 100
-                _downloads[download_id]['status'] = 'done'
-                _downloads[download_id]['path'] = path
+                with _downloads_lock:
+                    _downloads[download_id].update(
+                        progress=100, status='done', path=path)
             else:
-                _downloads[download_id]['status'] = 'error'
-                _downloads[download_id]['error'] = 'yt-dlp not found and no direct URL available'
+                with _downloads_lock:
+                    _downloads[download_id].update(
+                        status='error',
+                        error='yt-dlp not found and no direct URL available')
         except Exception as e:
-            _downloads[download_id]['status'] = 'error'
-            _downloads[download_id]['error'] = str(e)
+            with _downloads_lock:
+                _downloads[download_id].update(
+                    status='error', error=str(e))
 
     t = threading.Thread(target=run, daemon=True)
     t.start()
@@ -251,7 +258,8 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
         # Parse progress percentage
         m = progress_re.search(line)
         if m:
-            _downloads[download_id]['progress'] = float(m.group(1))
+            with _downloads_lock:
+                _downloads[download_id]['progress'] = float(m.group(1))
         # Capture output filename from [download] or [Merger] lines
         if 'Destination:' in line:
             final_path = line.split('Destination:', 1)[1].strip()
@@ -272,6 +280,6 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
         dest_path = os.path.join(video_dir, os.path.basename(final_path))
         shutil.move(final_path, dest_path)
         final_path = dest_path
-    _downloads[download_id]['progress'] = 100
-    _downloads[download_id]['status'] = 'done'
-    _downloads[download_id]['path'] = final_path
+    with _downloads_lock:
+        _downloads[download_id].update(
+            progress=100, status='done', path=final_path)

@@ -10,6 +10,7 @@ import urllib.request
 import urllib.error
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'native-host'))
+import xtap_core
 import xtap_daemon
 
 
@@ -32,8 +33,8 @@ def _set_module_token():
 @pytest.fixture()
 def daemon_url():
     """Start DaemonHandler on an ephemeral port and return its base URL."""
-    from http.server import HTTPServer
-    server = HTTPServer(('127.0.0.1', 0), xtap_daemon.DaemonHandler)
+    from http.server import ThreadingHTTPServer
+    server = ThreadingHTTPServer(('127.0.0.1', 0), xtap_daemon.DaemonHandler)
     port = server.server_address[1]
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
@@ -239,3 +240,110 @@ class TestAuthorizedRequest:
         )
         assert status == 400
         assert 'Invalid dump filename' in body['error']
+
+
+# ---------------------------------------------------------------------------
+# Tests — Concurrency (issue #8)
+# ---------------------------------------------------------------------------
+
+class TestConcurrency:
+
+    def test_status_responsive_during_slow_tweets(self, daemon_url):
+        """GET /status should respond promptly while a slow /tweets is in progress."""
+        import shutil
+        import tempfile
+        import time
+        from unittest.mock import patch
+        import concurrent.futures
+
+        out_dir = tempfile.mkdtemp(dir=os.path.expanduser('~'), prefix='.xtap-test-')
+
+        slow_entered = threading.Event()
+        original_write_tweets = xtap_daemon.write_tweets
+
+        def slow_write_tweets(tweets, out_dir, seen_ids):
+            slow_entered.set()
+            time.sleep(1.0)
+            return original_write_tweets(tweets, out_dir, seen_ids)
+
+        try:
+            with patch.object(xtap_daemon, 'write_tweets', side_effect=slow_write_tweets):
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                    # Fire off the slow /tweets request
+                    tweets_future = pool.submit(
+                        _post, daemon_url, '/tweets',
+                        {'outputDir': out_dir, 'tweets': [{'id': '1', 'text': 'hi'}]},
+                        TEST_TOKEN,
+                    )
+
+                    # Wait until the slow handler has started
+                    assert slow_entered.wait(timeout=5), 'slow write_tweets never entered'
+
+                    # Now /status should respond quickly
+                    t0 = time.monotonic()
+                    req = urllib.request.Request(f'{daemon_url}/status')
+                    with urllib.request.urlopen(req, timeout=2) as resp:
+                        status_body = json.loads(resp.read())
+                    elapsed = time.monotonic() - t0
+
+                    assert status_body['ok'] is True
+                    assert elapsed < 0.5, f'/status took {elapsed:.2f}s — blocked by slow /tweets'
+
+                    # Let the tweets request finish
+                    tweets_status, tweets_body = tweets_future.result(timeout=5)
+                    assert tweets_status == 200
+                    assert tweets_body['ok'] is True
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+
+    def test_download_status_coherent(self):
+        """get_download_status never returns partial state (e.g. status=done with path=None)."""
+        import time
+
+        download_id = 'coherence-test'
+        errors = []
+        stop = threading.Event()
+
+        # Seed initial state
+        with xtap_core._downloads_lock:
+            xtap_core._downloads[download_id] = {
+                'status': 'downloading',
+                'progress': 0,
+                'path': None,
+                'error': None,
+            }
+
+        def reader():
+            while not stop.is_set():
+                s = xtap_core.get_download_status(download_id)
+                if s['status'] == 'done' and s['path'] is None:
+                    errors.append(f'Incoherent: status=done but path=None')
+                if s['status'] == 'error' and s['error'] is None:
+                    errors.append(f'Incoherent: status=error but error=None')
+
+        def writer():
+            for i in range(200):
+                with xtap_core._downloads_lock:
+                    xtap_core._downloads[download_id].update(
+                        progress=i, status='done', path='/tmp/video.mp4')
+                with xtap_core._downloads_lock:
+                    xtap_core._downloads[download_id].update(
+                        progress=0, status='downloading', path=None, error=None)
+            stop.set()
+
+        readers = [threading.Thread(target=reader) for _ in range(4)]
+        for r in readers:
+            r.start()
+        writer_t = threading.Thread(target=writer)
+        writer_t.start()
+
+        writer_t.join(timeout=5)
+        stop.set()
+        for r in readers:
+            r.join(timeout=2)
+
+        # Clean up
+        with xtap_core._downloads_lock:
+            del xtap_core._downloads[download_id]
+
+        assert not errors, f'Found incoherent reads: {errors[:5]}'

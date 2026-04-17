@@ -9,7 +9,8 @@ import signal
 import sys
 import time
 import uuid
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
                        validate_output_dir, write_tweets, write_log,
@@ -49,6 +50,7 @@ def load_token():
 _token = None
 _seen_ids = set()
 _custom_dirs = set()
+_state_lock = threading.Lock()
 
 
 class DaemonHandler(BaseHTTPRequestHandler):
@@ -143,9 +145,10 @@ class DaemonHandler(BaseHTTPRequestHandler):
     def _handle_tweets(self, body):
         try:
             msg_dir = body.get('outputDir', '').strip()
-            out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
-            tweets = body.get('tweets', [])
-            count, dupes = write_tweets(tweets, out_dir, _seen_ids)
+            with _state_lock:
+                out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
+                tweets = body.get('tweets', [])
+                count, dupes = write_tweets(tweets, out_dir, _seen_ids)
             log_debug(f'  Tweets: {count} written, {dupes} dupes -> {out_dir}')
             self._send_json({'ok': True, 'count': count, 'dupes': dupes})
         except ValueError as e:
@@ -158,7 +161,8 @@ class DaemonHandler(BaseHTTPRequestHandler):
     def _handle_log(self, body):
         try:
             msg_dir = body.get('outputDir', '').strip()
-            out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
+            with _state_lock:
+                out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
             lines = body.get('lines', [])
             logged = write_log(lines, out_dir)
             self._send_json({'ok': True, 'logged': logged})
@@ -172,7 +176,8 @@ class DaemonHandler(BaseHTTPRequestHandler):
     def _handle_dump(self, body):
         try:
             msg_dir = body.get('outputDir', '').strip()
-            out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
+            with _state_lock:
+                out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
             filename = body.get('filename', 'dump.json')
             content = body.get('content', '')
             path = write_dump(filename, content, out_dir)
@@ -210,7 +215,8 @@ class DaemonHandler(BaseHTTPRequestHandler):
             direct_url = body.get('directUrl', '')
             post_date = body.get('postDate', '')
             msg_dir = body.get('outputDir', '').strip()
-            out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
+            with _state_lock:
+                out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
             download_id = str(uuid.uuid4())
             start_download(download_id, tweet_url, direct_url, out_dir, post_date)
             log_debug(f'  Download started: {download_id} -> {tweet_url}')
@@ -281,7 +287,7 @@ def main():
     log_info(f'  Seen IDs:   {len(_seen_ids)} loaded')
 
     try:
-        server = HTTPServer((BIND_HOST, BIND_PORT), DaemonHandler)
+        server = ThreadingHTTPServer((BIND_HOST, BIND_PORT), DaemonHandler)
     except OSError as e:
         log_info(f'FATAL: Cannot bind to {BIND_HOST}:{BIND_PORT} — {e}')
         log_info(f'  Is another instance already running?')
