@@ -208,12 +208,18 @@ class TestAuthorizedRequest:
         assert body['count'] == 1
 
     def test_zero_content_length_post(self, daemon_url):
-        """POST with Content-Length: 0 and valid auth should parse as empty body."""
-        status, body = _post(
-            daemon_url, '/tweets',
-            body={},  # empty dict → Content-Length will be 2 (for "{}")
-            token=TEST_TOKEN,
-        )
-        # Should reach the handler (200 or 500 depending on output dir, but not 400/413)
-        assert status != 400
-        assert status != 413
+        """POST with Content-Length: 0 exercises _read_json returning {}."""
+        import http.client
+        port = int(daemon_url.rsplit(':', 1)[1])
+        conn = http.client.HTTPConnection('127.0.0.1', port)
+        # Use /check-ytdlp which ignores the body — avoids output-dir issues
+        conn.putrequest('POST', '/check-ytdlp')
+        conn.putheader('Content-Type', 'application/json')
+        conn.putheader('Content-Length', '0')
+        conn.putheader('Authorization', f'Bearer {TEST_TOKEN}')
+        conn.endheaders()
+        resp = conn.getresponse()
+        body = json.loads(resp.read())
+        assert resp.status == 200
+        assert body['ok'] is True
+        conn.close()
