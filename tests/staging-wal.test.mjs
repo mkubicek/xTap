@@ -45,7 +45,7 @@ function createMockStorage(opts = {}) {
       if (opts.throwOnSet) return Promise.reject(new Error('QuotaExceededError'));
       if (opts.throwOnStagingWrite && Object.keys(items).some(k => k.startsWith('stg_')))
         return Promise.reject(new Error('QuotaExceededError'));
-      if (opts.throwOnBufferWrite && 'tweetBuffer' in items)
+      if (opts.throwOnStateWrite && ('seenIds' in items || 'tweetBuffer' in items))
         return Promise.reject(new Error('QuotaExceededError'));
       Object.assign(data, items);
       return Promise.resolve();
@@ -223,6 +223,29 @@ describe('recoverStagedPayloads', () => {
     assert.equal(stored[key], undefined);
     assert.equal(env.buffer.length, 0);
   });
+
+  it('keeps WAL entry when saveState fails', async () => {
+    const env = setup({
+      extractTweets: (_ep, data) => data?.tweets || [],
+      sessionOpts: { throwOnStateWrite: true },
+    });
+
+    // Stage works (stg_* keys aren't blocked by throwOnStateWrite)
+    await env.stagePayload('HomeTimeline', {
+      tweets: [{ id: '1', text: 'tweet 1' }],
+    });
+
+    await env.recoverStagedPayloads();
+
+    // Tweet is in in-memory buffer
+    assert.equal(env.buffer.length, 1);
+    assert.equal(env.buffer[0].id, '1');
+
+    // WAL entry is retained (saveState failed → recovery kept it)
+    const stored = await env.stagingStorage().get(null);
+    const stgKeys = Object.keys(stored).filter(k => k.startsWith('stg_'));
+    assert.equal(stgKeys.length, 1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -251,24 +274,28 @@ describe('saveState / restoreState buffer persistence', () => {
     assert.ok(env.seenIds.has('3'));
   });
 
-  it('seenIds persists even when buffer write fails (decoupled)', async () => {
-    const env = setup({ sessionOpts: { throwOnBufferWrite: true } });
+  it('returns false on storage error (coupled write)', async () => {
+    const env = setup({ sessionOpts: { throwOnStateWrite: true } });
 
     env.buffer = [{ id: '1', text: 'buffered' }];
-    env.seenIds = new Set(['1', '2']);
+    env.seenIds = new Set(['1']);
 
-    await env.saveState();
+    const ok = await env.saveState();
+    assert.equal(ok, false);
 
+    // Neither seenIds nor buffer should be in storage
     env.buffer = [];
     env.seenIds = new Set();
-
     await env.restoreState();
-
-    // seenIds must survive despite buffer write failure
-    assert.ok(env.seenIds.has('1'));
-    assert.ok(env.seenIds.has('2'));
-    // buffer was not persisted
     assert.equal(env.buffer.length, 0);
+    assert.equal(env.seenIds.size, 0);
+  });
+
+  it('returns true on success', async () => {
+    const env = setup();
+    env.buffer = [{ id: '1', text: 'buffered' }];
+    const ok = await env.saveState();
+    assert.equal(ok, true);
   });
 });
 

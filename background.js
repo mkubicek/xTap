@@ -23,6 +23,7 @@ const isDevMode = !chrome.runtime.getManifest().update_url;
 const hasSessionStorage = !!chrome.storage.session;
 const traceStorage = chrome.storage.session || chrome.storage.local;
 let stageSeq = 0;
+let _saveChain = Promise.resolve();
 let readyResolve;
 const ready = new Promise(r => { readyResolve = r; });
 
@@ -112,7 +113,8 @@ async function recoverStagedPayloads() {
     }
     // Persist buffer before clearing WAL entry — if SW dies mid-recovery,
     // already-cleared entries must have their tweets in durable storage.
-    if (produced) await saveState();
+    // If saveState fails, keep the WAL entry for retry on next startup.
+    if (produced && !(await saveState())) continue;
     await clearStagedPayload(key);
   }
 
@@ -122,23 +124,34 @@ async function recoverStagedPayloads() {
   }
 }
 
-async function saveState() {
-  // seenIds and tweetBuffer are separate writes so a quota failure on the
-  // (potentially large) buffer doesn't take down dedup state with it.
+// Serialized via _saveChain so concurrent callers can't interleave writes
+// (back-to-back handlers would otherwise race, and an earlier snapshot could
+// land after a later one, rolling back buffered tweets).  Returns true on
+// success, false on storage error — callers gate WAL clears on this.
+function saveState() {
+  const p = _saveChain.then(() => _saveStateImpl());
+  _saveChain = p.catch(() => {});
+  return p;
+}
+
+async function _saveStateImpl() {
+  // seenIds and tweetBuffer are coupled in one write so a quota failure
+  // loses both rather than persisting seenIds without the buffer (which
+  // would create ghost-dedup entries that permanently block those tweets).
   const seenArr = [...seenIds].slice(-MAX_SEEN_IDS);
-  const bufferWrite = seenIdsStorage().set({ tweetBuffer: buffer }).catch(e =>
-    console.warn('[xTap] Failed to persist buffer:', e.message));
-  if (isDevMode && hasSessionStorage) {
-    await Promise.all([
-      chrome.storage.session.set({ seenIds: seenArr }),
-      bufferWrite,
-      chrome.storage.local.set({ allTimeCount, captureEnabled }),
-    ]);
-  } else {
-    await Promise.all([
-      chrome.storage.local.set({ seenIds: seenArr, allTimeCount, captureEnabled }),
-      bufferWrite,
-    ]);
+  try {
+    if (isDevMode && hasSessionStorage) {
+      await Promise.all([
+        chrome.storage.session.set({ seenIds: seenArr, tweetBuffer: buffer }),
+        chrome.storage.local.set({ allTimeCount, captureEnabled }),
+      ]);
+    } else {
+      await chrome.storage.local.set({ seenIds: seenArr, tweetBuffer: buffer, allTimeCount, captureEnabled });
+    }
+    return true;
+  } catch (e) {
+    console.warn('[xTap] Failed to persist state:', e.message);
+    return false;
   }
 }
 
@@ -594,9 +607,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (missingText > 0) warn += ` | ${missingText} missing text`;
           console.log(`[xTap] ${msg.endpoint}: ${tweets.length} tweets${warn}`);
           enqueueTweets(tweets, msg.endpoint);
-          await saveState();
+          // Only clear WAL after state is durably persisted — if saveState
+          // fails, the WAL entry stays for recovery on next startup.
+          if (await saveState()) await clearStagedPayload(stageKey);
+        } else {
+          await clearStagedPayload(stageKey);
         }
-        await clearStagedPayload(stageKey);
         // Flush after WAL commit so buffer.splice in flush() can't race with
         // the persist-then-clear sequence above.
         if (buffer.length >= BATCH_SIZE) flush();
