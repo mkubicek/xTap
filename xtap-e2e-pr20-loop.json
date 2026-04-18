@@ -1,0 +1,107 @@
+{
+  "project": "mkubicek/xTap",
+  "goal": "Land the first narrow Chromium-based offline E2E harness PR on top of fixture foundation (PR #19).",
+  "updated_at": "2026-04-18T18:55:00+02:00",
+  "rules": [
+    "One task per loop iteration.",
+    "Do not contact live X/Twitter.",
+    "Do not rewrite manifest host matching to localhost-only.",
+    "Chromium only for this PR. Firefox is later.",
+    "A task is only done after its verify commands exit 0.",
+    "Local commit after a passing task if git state is safe. Never push.",
+    "Keep the PR narrow. No unrelated daemon/product hardening in this loop."
+  ],
+  "tasks": [
+    {
+      "id": "pr20-static-extension-id",
+"title": "Make the test/built extension artifact deterministic enough to yield a stable extension ID",
+      "status": "done",
+      "deliverables": [
+        "deterministic extension build/test artifact path",
+        "documented stable-ID approach for native-host authorization"
+      ],
+      "verify": [
+        "build or prepare the extension twice and confirm the effective extension ID is stable"
+      ],
+      "note": "Stable ID: mhljdmpppgbddpoijmhjnaaondpidjfn. test-extension.pem committed in tests/e2e/. build-test-extension.js copies extension, injects key into manifest. Two builds produce identical output. Chrome headless smoke test confirmed the ID matches."
+    },
+    {
+      "id": "pr20-fake-x-https",
+      "title": "Create a tiny HTTPS Fake X replay surface for timeline-basic",
+      "status": "pending",
+      "deliverables": [
+        "minimal HTTPS server",
+        "fixture-backed replay endpoint or route",
+        "minimal page that triggers the real fetch/XHR path"
+      ],
+      "verify": [
+        "start the server locally",
+        "load a sample page over HTTPS",
+        "return fixture-backed responses for timeline-basic"
+      ],
+      "note": ""
+    },
+    {
+      "id": "pr20-native-host-bootstrap",
+      "title": "Bootstrap native-host manifest placement and daemon path for test execution",
+      "status": "pending",
+      "deliverables": [
+        "bootstrap/discovery helper",
+        "documented native-host manifest placement for the harness"
+      ],
+      "verify": [
+        "run the bootstrap locally",
+        "prove the extension can reach the native host via the stable test identity"
+      ],
+      "note": ""
+    },
+    {
+      "id": "pr20-chromium-harness",
+      "title": "Launch Chromium persistent context with the real extension and Fake X",
+      "status": "pending",
+      "deliverables": [
+        "Playwright Chromium harness",
+        "real extension load path",
+        "host routing or equivalent setup",
+        "ignoreHTTPSErrors wiring"
+      ],
+      "verify": [
+        "automated Chromium launch succeeds",
+        "the extension loads successfully",
+        "Fake X loads under x.com/twitter.com-style URL"
+      ],
+      "note": ""
+    },
+    {
+      "id": "pr20-golden-jsonl",
+      "title": "Land the first true end-to-end timeline-basic golden-path JSONL assertion",
+      "status": "pending",
+      "deliverables": [
+        "one end-to-end scenario",
+        "filesystem polling assertion",
+        "golden JSONL comparison"
+      ],
+      "verify": [
+        "run the scenario end to end",
+        "assert output file exists",
+        "assert JSONL records match expected golden output"
+      ],
+      "note": ""
+    },
+    {
+      "id": "pr20-ci-chromium-lane",
+      "title": "Wire the single Chromium lane into a CI-capable command/workflow",
+      "status": "pending",
+      "deliverables": [
+        "documented repo entry command",
+        "workflow or CI bootstrap for the single Chromium lane"
+      ],
+      "verify": [
+        "run the CI-oriented command locally if feasible",
+        "workflow/config validates",
+        "Chromium lane exits 0 in CI-capable mode"
+      ],
+      "note": ""
+    }
+  ]
+}
