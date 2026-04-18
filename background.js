@@ -396,6 +396,20 @@ async function reprobeTransport() {
       return true;
     }
   }
+  // Fallback: check chrome.storage.local (token may have been written by
+  // a prior session or injected externally for testing)
+  const stored = await chrome.storage.local.get(['httpToken', 'httpPort']);
+  if (stored.httpToken && stored.httpPort) {
+    const alive = await probeHttp(stored.httpPort, stored.httpToken);
+    if (alive) {
+      httpToken = stored.httpToken;
+      httpPort = stored.httpPort;
+      transport = 'http';
+      updateBadge();
+      console.log('[xTap] HTTP daemon recovered (stored token)');
+      return true;
+    }
+  }
   return false;
 }
 

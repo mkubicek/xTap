@@ -58,7 +58,7 @@
     {
       "id": "pr20-chromium-harness",
       "title": "Launch Chromium persistent context with the real extension and Fake X",
-      "status": "pending",
+      "status": "done",
       "deliverables": [
         "Playwright Chromium harness",
         "real extension load path",
@@ -70,12 +70,12 @@
         "the extension loads successfully",
         "Fake X loads under x.com/twitter.com-style URL"
       ],
-      "note": ""
+      "note": "tests/e2e/chromium-harness.js: Playwright persistent context with --headless=new for CI, --load-extension for real extension, --host-resolver-rules MAP x.com 127.0.0.1, ignoreHTTPSErrors. Starts Fake X as child process via fork+IPC. Verifies: extension popup.html accessible at chrome-extension://mhljdmpppgbddpoijmhjnaaondpidjfn/, Fake X page title becomes 'xTap:loaded' confirming fetch interception works. Both headed and headless modes pass. package.json + playwright dependency added to tests/e2e/."
     },
     {
       "id": "pr20-golden-jsonl",
       "title": "Land the first true end-to-end timeline-basic golden-path JSONL assertion",
-      "status": "pending",
+      "status": "done",
       "deliverables": [
         "one end-to-end scenario",
         "filesystem polling assertion",
@@ -86,7 +86,7 @@
         "assert output file exists",
         "assert JSONL records match expected golden output"
       ],
-      "note": ""
+      "note": "tests/e2e/golden-jsonl-test.js: Full pipeline test — Fake X replay → extension capture → daemon JSONL write → golden comparison. Playwright Chromium (bundled) doesn't support native messaging, so the test injects the HTTP token into chrome.storage.local; background.js reprobeTransport() now has a storage fallback to pick it up. Polls output dir for tweets-*.jsonl with 39 records, compares against expected.jsonl (ignoring captured_at). Two consecutive runs pass reliably."
     },
     {
       "id": "pr20-ci-chromium-lane",
