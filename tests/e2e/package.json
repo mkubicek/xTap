@@ -2,6 +2,12 @@
   "name": "xtap-e2e",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "node golden-jsonl-test.js",
+    "test:headed": "node golden-jsonl-test.js --headed",
+    "setup": "node native-host-bootstrap.js --setup",
+    "teardown": "node native-host-bootstrap.js --teardown"
+  },
   "dependencies": {
     "playwright": "^1.59.1"
   }
