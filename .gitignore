@@ -13,4 +13,5 @@ coverage-*/
 tests/fixtures/private-raw/*
 !tests/fixtures/private-raw/CAPTURE.md
 tests/e2e/.extension-out/
+tests/e2e/certs/
 !tests/e2e/test-extension.pem
