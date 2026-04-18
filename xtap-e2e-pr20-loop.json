@@ -28,7 +28,7 @@
     {
       "id": "pr20-fake-x-https",
       "title": "Create a tiny HTTPS Fake X replay surface for timeline-basic",
-      "status": "pending",
+      "status": "done",
       "deliverables": [
         "minimal HTTPS server",
         "fixture-backed replay endpoint or route",
@@ -39,12 +39,12 @@
         "load a sample page over HTTPS",
         "return fixture-backed responses for timeline-basic"
       ],
-      "note": ""
+      "note": "tests/e2e/fake-x.js: self-signed cert generated on first run (tests/e2e/certs/, gitignored). Serves HTML page at / that issues POST to /i/api/graphql/FakeReplayHash/HomeTimeline. GraphQL endpoint returns fixture.json from timeline-basic pack. CORS enabled. Port 4443 default, configurable via --port. Chrome needs --host-resolver-rules='MAP x.com 127.0.0.1' --ignore-certificate-errors."
     },
     {
       "id": "pr20-native-host-bootstrap",
       "title": "Bootstrap native-host manifest placement and daemon path for test execution",
-      "status": "pending",
+      "status": "done",
       "deliverables": [
         "bootstrap/discovery helper",
         "documented native-host manifest placement for the harness"
@@ -53,7 +53,7 @@
         "run the bootstrap locally",
         "prove the extension can reach the native host via the stable test identity"
       ],
-      "note": ""
+      "note": "tests/e2e/native-host-bootstrap.js: --setup installs Chrome native host manifest with test extension ID (mhljdmpppgbddpoijmhjnaaondpidjfn), creates E2E-specific wrapper script, ensures ~/.xtap/secret token, starts daemon if needed, then verifies: manifest correctness, native messaging protocol (simulates GET_TOKEN via stdin/stdout binary framing), and daemon HTTP /status. --teardown restores original manifest from backup, stops daemon if bootstrap started it, removes wrapper. Backs up existing user manifest to avoid clobbering. macOS + Linux paths supported."
     },
     {
       "id": "pr20-chromium-harness",
