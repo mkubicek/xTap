@@ -10,3 +10,5 @@ __pycache__
 coverage/
 coverage-*/
 .pytest_cache/
+tests/fixtures/private-raw/*
+!tests/fixtures/private-raw/CAPTURE.md

@@ -402,6 +402,11 @@ node --test tests/*.test.mjs
 
 CI runs these on every push to `main` with coverage uploaded to [Codecov](https://codecov.io/gh/mkubicek/xTap).
 
+Parser fixture packs live under `tests/fixtures/`. Raw captures stay local in
+`tests/fixtures/private-raw/` (gitignored), while committed anonymized packs
+live in `tests/fixtures/sanitized/`. The anonymization methodology and review
+checklist are documented in `tests/fixtures/FIXTURES.md`.
+
 ## License
 
 [MIT](LICENSE) — use it however you like.
