@@ -416,14 +416,14 @@ async function flush() {
       if (!resp || !resp.ok) {
         console.error('[xTap] Host rejected tweets:', resp?.error || 'no response');
         buffer.unshift(...batch);
-        saveState();
+        await saveState();
       } else {
-        saveState();
+        await saveState();
       }
     } catch (e) {
       console.error('[xTap] Send failed, buffering tweets back:', e);
       buffer.unshift(...batch);
-      saveState();
+      await saveState();
     }
   }
 
