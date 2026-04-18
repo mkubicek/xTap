@@ -19,6 +19,7 @@
  *   - User bios/descriptions                  → synthetic replacement
  *   - Card titles, descriptions, string_value → synthetic replacement
  *   - Article titles, preview_text            → synthetic replacement
+ *   - Translation text (grok translations)    → synthetic replacement
  *   - All pbs.twimg.com / video.twimg.com URLs → placeholder URLs
  *   - All twitter.com / x.com handle-URLs      → anonymized handles
  *   - Affiliate / business-label descriptions   → generic labels
@@ -259,6 +260,10 @@ class Sanitizer {
     // --- PROSE: article title and preview_text ---
     if ((key === 'title' || key === 'preview_text') && typeof value === 'string')
       return syntheticText('article:' + value, Math.min(value.length, 120));
+
+    // --- PROSE: translation text (grok_translated_post_with_availability) ---
+    if (key === 'translation' && typeof value === 'string')
+      return syntheticText('translation:' + value, Math.min(value.length, 200));
 
     // --- PROSE: feedback confirmation/prompt ---
     if ((key === 'confirmation' || key === 'prompt') && typeof value === 'string')
@@ -627,6 +632,94 @@ and author references remain internally consistent.
     console.warn(`⚠ ${leakedStatuses.length} raw status IDs leaked in URLs`);
   } else {
     console.log('✓ No raw status IDs in URLs');
+  }
+
+  // --- Verify no prose leaks in text-bearing fields ---
+  console.log('\nVerifying no prose leaks in text-bearing fields...');
+  const PROSE_FIELDS = new Set([
+    'full_text', 'translation', 'preview_text', 'title',
+  ]);
+  // Fields that are prose when non-empty and not a structural constant
+  const PROSE_FIELDS_CONDITIONAL = new Set([
+    'description', 'string_value',
+  ]);
+  // Fields that are prose only when long (short values like "en" are structural)
+  const PROSE_FIELDS_LONG = new Set([
+    'text',
+  ]);
+  // text is only prose in note_tweet context, but we check it everywhere
+  // and accept structural values
+  const STRUCTURAL_VALUES = new Set([
+    '', 'example.com', 'Somewhere', 'Sanitized feedback text.', 'none',
+  ]);
+
+  const wordBankSet = new Set(WORDS);
+
+  /** Returns true if text is synthetic (all tokens from the word bank). */
+  function isSynthetic(text) {
+    // Strip trailing period and split on whitespace/periods
+    const tokens = text.replace(/\.$/, '').split(/[\s.]+/).filter(Boolean);
+    return tokens.length > 0 && tokens.every(t => wordBankSet.has(t.toLowerCase()));
+  }
+
+  /** Returns true if text looks like a known sanitized pattern. */
+  function isSanitizedPattern(text) {
+    if (STRUCTURAL_VALUES.has(text)) return true;
+    if (/^Organization [0-9a-f]+$/.test(text)) return true;
+    if (/^Company [0-9a-f]+$/.test(text)) return true;
+    if (/^User [0-9a-f]+$/.test(text)) return true;
+    if (/^user_[0-9a-f]+$/.test(text)) return true;
+    if (/^SANITIZED/.test(text)) return true;
+    if (/^\/sanitized\//.test(text)) return true;
+    if (/^https?:\/\/(pbs\.twimg\.com|video\.twimg\.com)\/sanitized\//.test(text)) return true;
+    if (/^https?:\/\/t\.co\/SAN_/.test(text)) return true;
+    if (/^https?:\/\/example\.com\/sanitized\//.test(text)) return true;
+    if (/^example\.com\/san_/.test(text)) return true;
+    return false;
+  }
+
+  const proseLeaks = [];
+
+  function checkProseLeaks(node, path = '') {
+    if (node === null || node === undefined) return;
+    if (Array.isArray(node)) {
+      node.forEach((item, i) => checkProseLeaks(item, `${path}[${i}]`));
+      return;
+    }
+    if (typeof node !== 'object') return;
+    for (const [key, value] of Object.entries(node)) {
+      if (typeof value === 'string') {
+        const fieldPath = path ? `${path}.${key}` : key;
+        if (PROSE_FIELDS.has(key)) {
+          if (!isSynthetic(value) && !isSanitizedPattern(value)) {
+            proseLeaks.push({ field: key, path: fieldPath, sample: value.slice(0, 80) });
+          }
+        } else if (PROSE_FIELDS_CONDITIONAL.has(key) && value.length > 0) {
+          if (!isSynthetic(value) && !isSanitizedPattern(value)) {
+            proseLeaks.push({ field: key, path: fieldPath, sample: value.slice(0, 80) });
+          }
+        } else if (PROSE_FIELDS_LONG.has(key) && value.length > 30) {
+          if (!isSynthetic(value) && !isSanitizedPattern(value)) {
+            proseLeaks.push({ field: key, path: fieldPath, sample: value.slice(0, 80) });
+          }
+        }
+      }
+      if (typeof value === 'object') {
+        checkProseLeaks(value, path ? `${path}.${key}` : key);
+      }
+    }
+  }
+
+  checkProseLeaks(sanitizedDataClean);
+
+  if (proseLeaks.length) {
+    console.error(`✗ ${proseLeaks.length} prose leak(s) detected in text-bearing fields:`);
+    for (const leak of proseLeaks) {
+      console.error(`  ${leak.field} at ${leak.path}: "${leak.sample}"`);
+    }
+    process.exit(1);
+  } else {
+    console.log(`✓ All text-bearing fields contain only synthetic/sanitized content`);
   }
 
   console.log('\nDone. Sanitized fixture pack written to:', outDir);
