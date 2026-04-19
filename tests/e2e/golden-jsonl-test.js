@@ -27,12 +27,11 @@ import {
   mkdtempSync, mkdirSync, rmSync, existsSync,
   readFileSync, readdirSync,
 } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir, homedir } from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..', '..');
 const EXTENSION_DIR = join(__dirname, '.extension-out');
 const EXTENSION_ID = 'mhljdmpppgbddpoijmhjnaaondpidjfn';
 const FIXTURE_DIR = join(__dirname, '..', 'fixtures', 'sanitized', 'timeline-basic');
@@ -119,12 +118,17 @@ async function pollForJsonl(dir, minLines, timeoutMs = 60_000) {
         f => f.startsWith('tweets-') && f.endsWith('.jsonl'),
       );
       for (const f of files) {
-        const content = readFileSync(join(dir, f), 'utf8').trim();
-        if (!content) continue;
-        const lines = content.split('\n');
-        if (lines.length >= minLines) {
-          log(`Found ${lines.length} records in ${f}`);
-          return lines.map(l => JSON.parse(l));
+        try {
+          const content = readFileSync(join(dir, f), 'utf8').trim();
+          if (!content) continue;
+          const lines = content.split('\n');
+          if (lines.length >= minLines) {
+            const parsed = lines.map(l => JSON.parse(l));
+            log(`Found ${lines.length} records in ${f}`);
+            return parsed;
+          }
+        } catch {
+          // Partial write — daemon still flushing, retry next poll
         }
       }
     }
@@ -217,16 +221,16 @@ async function run() {
     bootstrapRan = true;  // set before --setup so teardown runs on partial failure
     execSync(`node "${BOOTSTRAP}" --setup`, { stdio: 'inherit' });
 
-    // 4. Build extension
+    // 3. Build extension
     buildExtension();
 
-    // 5. Start Fake X
+    // 4. Start Fake X
     fakeX = await startFakeX(port);
 
-    // 6. Create temp Chrome user-data dir
+    // 5. Create temp Chrome user-data dir
     userDataDir = mkdtempSync(join(tmpdir(), 'xtap-e2e-'));
 
-    // 7. Launch Chromium with the extension
+    // 6. Launch Chromium with the extension
     const launchArgs = [
       `--disable-extensions-except=${EXTENSION_DIR}`,
       `--load-extension=${EXTENSION_DIR}`,
@@ -261,7 +265,7 @@ async function run() {
       });
     }
 
-    // 8. Verify extension is loaded and inject HTTP token
+    // 7. Verify extension is loaded and inject HTTP token
     //    Native messaging requires system Chrome manifest paths; Playwright's
     //    bundled Chromium may not find them. Inject the token directly via
     //    chrome.storage.local so the extension can reach the daemon.
@@ -279,7 +283,7 @@ async function run() {
     log(`Injected HTTP token into extension storage (port ${E2E_DAEMON_PORT})`);
     await extPage.close();
 
-    // 9. Navigate to Fake X — triggers GraphQL fetch captured by extension
+    // 8. Navigate to Fake X — triggers GraphQL fetch captured by extension
     log(`Navigating to https://x.com:${port}/...`);
     const page = await context.newPage();
     await page.goto(`https://x.com:${port}/`, {
@@ -299,7 +303,7 @@ async function run() {
     }
     log('Extension captured GraphQL response');
 
-    // 10. Poll for JSONL output (flush timer is ~30-45 s)
+    // 9. Poll for JSONL output (flush timer is ~30-45 s)
     const manifest = JSON.parse(
       readFileSync(join(FIXTURE_DIR, 'manifest.json'), 'utf8'),
     );
@@ -315,7 +319,7 @@ async function run() {
       );
     }
 
-    // 11. Compare against golden expected output
+    // 10. Compare against golden expected output
     log('Comparing against expected.jsonl...');
     const expectedLines = readFileSync(EXPECTED_JSONL, 'utf8').trim().split('\n');
     const expected = expectedLines.map(l => JSON.parse(l));

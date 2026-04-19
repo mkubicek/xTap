@@ -19,12 +19,11 @@
 import { chromium } from 'playwright';
 import { fork, execSync } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..', '..');
 const EXTENSION_DIR = join(__dirname, '.extension-out');
 const EXTENSION_ID = 'mhljdmpppgbddpoijmhjnaaondpidjfn';
 

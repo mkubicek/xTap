@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 /**
- * native-host-bootstrap.js — Setup/teardown native messaging for E2E tests.
+ * native-host-bootstrap.js — Setup/teardown for E2E tests.
  *
- * Installs the Chrome native host manifest for the deterministic test
- * extension ID, ensures a daemon auth token exists, optionally starts the
- * HTTP daemon, and verifies the full native messaging pipeline.
+ * Ensures a daemon auth token exists, starts the HTTP daemon, and
+ * verifies the daemon is responding. By default, does NOT install
+ * the Chrome native host manifest (the E2E test injects the token
+ * via chrome.storage.local, bypassing native messaging entirely).
+ *
+ * Pass --with-manifest to also install the native host manifest and
+ * wrapper for testing the native messaging pipeline. This overwrites
+ * the user's real manifest (backed up and restored on teardown).
  *
  * Usage:
  *   node tests/e2e/native-host-bootstrap.js             # default: --setup
  *   node tests/e2e/native-host-bootstrap.js --setup
+ *   node tests/e2e/native-host-bootstrap.js --setup --with-manifest
  *   node tests/e2e/native-host-bootstrap.js --teardown
  *   node tests/e2e/native-host-bootstrap.js --verify
  */
@@ -298,6 +304,7 @@ function teardown() {
   }
 
   // Restore original manifest from backup, or remove test-only manifest
+  // (only present if --with-manifest was used during setup)
   if (existsSync(BACKUP_PATH)) {
     copyFileSync(BACKUP_PATH, MANIFEST_PATH);
     unlinkSync(BACKUP_PATH);
@@ -312,7 +319,7 @@ function teardown() {
     } catch { /* leave it */ }
   }
 
-  // Remove E2E wrapper
+  // Remove E2E wrapper (only present if --with-manifest was used)
   if (existsSync(WRAPPER_PATH)) {
     unlinkSync(WRAPPER_PATH);
     console.log(`  wrapper: removed`);
@@ -325,41 +332,48 @@ function teardown() {
 // Main
 // ---------------------------------------------------------------------------
 
-async function setup() {
+async function setup(withManifest = false) {
   const extensionId = computeExtensionId();
   console.log(`[setup] extension ID: ${extensionId}\n`);
 
   ensureToken();
-  installWrapper();
-  installManifest(extensionId);
+  if (withManifest) {
+    installWrapper();
+    installManifest(extensionId);
+  }
   await ensureDaemon();
 
   console.log('\n[verify]');
-  verifyManifest(extensionId);
-  verifyNativeHost();
+  if (withManifest) {
+    verifyManifest(extensionId);
+    verifyNativeHost();
+  }
   await verifyDaemon();
 
-  console.log('\n[setup] done — native host ready for E2E tests');
+  console.log(`\n[setup] done — daemon ready for E2E tests${withManifest ? ' (native host manifest installed)' : ''}`);
 }
 
-async function verify() {
+async function verify(withManifest = false) {
   const extensionId = computeExtensionId();
   console.log('[verify]');
-  verifyManifest(extensionId);
-  verifyNativeHost();
+  if (withManifest) {
+    verifyManifest(extensionId);
+    verifyNativeHost();
+  }
   await verifyDaemon();
   console.log('[verify] all checks passed');
 }
 
 const cmd = process.argv[2] || '--setup';
+const withManifest = process.argv.includes('--with-manifest');
 try {
-  if (cmd === '--setup') await setup();
+  if (cmd === '--setup') await setup(withManifest);
   else if (cmd === '--teardown') teardown();
-  else if (cmd === '--verify') await verify();
+  else if (cmd === '--verify') await verify(withManifest);
   else {
     console.error(`Unknown command: ${cmd}`);
     console.error(
-      'Usage: node native-host-bootstrap.js [--setup|--teardown|--verify]',
+      'Usage: node native-host-bootstrap.js [--setup|--teardown|--verify] [--with-manifest]',
     );
     process.exit(1);
   }

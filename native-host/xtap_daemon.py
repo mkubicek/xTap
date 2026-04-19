@@ -83,6 +83,11 @@ class DaemonHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         log_debug(f'GET {self.path}')
         if self.path == '/status':
+            # Validate token when provided (allows probeHttp to detect stale credentials)
+            auth = self.headers.get('Authorization', '')
+            if auth and (not auth.startswith('Bearer ') or not hmac.compare_digest(auth[7:], _token)):
+                self._send_json({'ok': False, 'error': 'Unauthorized'}, 401)
+                return
             self._send_json({'ok': True, 'version': VERSION})
             return
         self._send_json({'ok': False, 'error': 'Not found'}, 404)

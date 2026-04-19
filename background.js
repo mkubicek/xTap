@@ -221,7 +221,10 @@ function makeTimeoutSignal(ms) {
 
 async function probeHttp(port, token) {
   try {
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     const resp = await fetch(`http://127.0.0.1:${port}/status`, {
+      headers,
       signal: makeTimeoutSignal(3000)
     });
     const data = await resp.json();
