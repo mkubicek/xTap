@@ -13,7 +13,7 @@ import sys
 import traceback
 from datetime import datetime
 
-XTAP_PORT = 17381
+XTAP_PORT = int(os.environ.get('XTAP_DAEMON_PORT', 17381))
 XTAP_DIR = os.path.expanduser('~/.xtap')
 XTAP_SECRET = os.path.join(XTAP_DIR, 'secret')
 XTAP_ERROR_LOG = os.path.join(XTAP_DIR, 'host-error.log')
