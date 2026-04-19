@@ -3,7 +3,11 @@
  * golden-jsonl-test.js — End-to-end golden-path JSONL assertion.
  *
  * Runs the full xTap pipeline offline:
- *   Fake X (HTTPS) → real extension → native host → daemon → JSONL on disk
+ *   Fake X (HTTPS) → real extension → HTTP daemon → JSONL on disk
+ *
+ * Note: Playwright's bundled Chromium does not support native messaging, so
+ * the test injects the daemon HTTP token directly into chrome.storage.local.
+ * The extension's reprobeTransport() storage fallback picks it up.
  *
  * Then compares the JSONL output against the expected.jsonl golden file
  * from the timeline-basic fixture pack.
@@ -58,6 +62,10 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 /**
  * Kill any process listening on the daemon port and wait until it's free.
+ *
+ * WARNING: This will SIGKILL the user's real xTap daemon (or any other
+ * process on :17381) without restoring it afterward. Safe in CI (ephemeral
+ * runner); on a developer machine the daemon must be restarted manually.
  */
 async function killDaemonPort() {
   try {
@@ -221,26 +229,33 @@ async function run() {
   const outputDir = mkdtempSync(join(homedir(), '.xtap', 'e2e-output-'));
   log(`Output dir: ${outputDir}`);
 
-  // 2. Stop any daemon on port 17381 so we start fresh with our output dir
-  await killDaemonPort();
-
-  // 3. Tell the daemon to use our output dir, then bootstrap native host
-  process.env.XTAP_OUTPUT_DIR = outputDir;
-  log('Running native-host bootstrap...');
-  execSync(`node "${BOOTSTRAP}" --setup`, { stdio: 'inherit' });
-
-  // 4. Build extension
-  buildExtension();
-
-  // 5. Start Fake X
-  const fakeX = await startFakeX(port);
-
-  // 6. Create temp Chrome user-data dir
-  const userDataDir = mkdtempSync(join(tmpdir(), 'xtap-e2e-'));
-
+  // All setup steps live inside try so that teardown runs even if setup
+  // fails partway (e.g. Fake X port conflict after bootstrap installed the
+  // native host manifest and started the daemon).
+  let bootstrapRan = false;
+  let fakeX;
+  let userDataDir;
   let context;
   let passed = false;
   try {
+    // 2. Stop any daemon on port 17381 so we start fresh with our output dir
+    await killDaemonPort();
+
+    // 3. Tell the daemon to use our output dir, then bootstrap native host
+    process.env.XTAP_OUTPUT_DIR = outputDir;
+    log('Running native-host bootstrap...');
+    execSync(`node "${BOOTSTRAP}" --setup`, { stdio: 'inherit' });
+    bootstrapRan = true;
+
+    // 4. Build extension
+    buildExtension();
+
+    // 5. Start Fake X
+    fakeX = await startFakeX(port);
+
+    // 6. Create temp Chrome user-data dir
+    userDataDir = mkdtempSync(join(tmpdir(), 'xtap-e2e-'));
+
     // 7. Launch Chromium with the extension
     const launchArgs = [
       `--disable-extensions-except=${EXTENSION_DIR}`,
@@ -344,16 +359,20 @@ async function run() {
     passed = true;
 
   } finally {
-    // Cleanup
+    // Cleanup — each step is guarded so later cleanup runs even if earlier fails
     if (context) await context.close().catch(() => {});
-    fakeX.kill('SIGTERM');
+    if (fakeX) fakeX.kill('SIGTERM');
 
-    log('Tearing down native host...');
-    try {
-      execSync(`node "${BOOTSTRAP}" --teardown`, { stdio: 'inherit' });
-    } catch {}
+    if (bootstrapRan) {
+      log('Tearing down native host...');
+      try {
+        execSync(`node "${BOOTSTRAP}" --teardown`, { stdio: 'inherit' });
+      } catch {}
+    }
 
-    try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
+    if (userDataDir) {
+      try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
+    }
     try { rmSync(outputDir, { recursive: true, force: true }); } catch {}
   }
 
