@@ -38,6 +38,7 @@ const EXTENSION_ID = 'mhljdmpppgbddpoijmhjnaaondpidjfn';
 const FIXTURE_DIR = join(__dirname, '..', 'fixtures', 'sanitized', 'timeline-basic');
 const EXPECTED_JSONL = join(FIXTURE_DIR, 'expected.jsonl');
 const BOOTSTRAP = join(__dirname, 'native-host-bootstrap.js');
+const E2E_DAEMON_PORT = 17382;
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -60,35 +61,6 @@ function log(msg) { console.log(`[golden-jsonl] ${msg}`); }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-/**
- * Kill any process listening on the daemon port and wait until it's free.
- *
- * WARNING: This will SIGKILL the user's real xTap daemon (or any other
- * process on :17381) without restoring it afterward. Safe in CI (ephemeral
- * runner); on a developer machine the daemon must be restarted manually.
- */
-async function killDaemonPort() {
-  try {
-    execSync('lsof -ti:17381 | xargs kill -9 2>/dev/null', { stdio: 'ignore' });
-    log('Killed existing process on :17381');
-  } catch {
-    // Nothing was listening — that's fine
-    return;
-  }
-
-  // Wait until the port is actually free (up to 5 s)
-  for (let i = 0; i < 20; i++) {
-    await sleep(250);
-    try {
-      execSync('lsof -ti:17381', { stdio: 'ignore' });
-      // Still occupied — keep waiting
-    } catch {
-      log('Port 17381 is free');
-      return;
-    }
-  }
-  throw new Error('Port 17381 still in use after 5 s');
-}
 
 function buildExtension() {
   log('Building test extension...');
@@ -238,14 +210,12 @@ async function run() {
   let context;
   let passed = false;
   try {
-    // 2. Stop any daemon on port 17381 so we start fresh with our output dir
-    await killDaemonPort();
-
-    // 3. Tell the daemon to use our output dir, then bootstrap native host
+    // 2. Tell the daemon to use our output dir and E2E port, then bootstrap
     process.env.XTAP_OUTPUT_DIR = outputDir;
+    process.env.XTAP_DAEMON_PORT = String(E2E_DAEMON_PORT);
     log('Running native-host bootstrap...');
+    bootstrapRan = true;  // set before --setup so teardown runs on partial failure
     execSync(`node "${BOOTSTRAP}" --setup`, { stdio: 'inherit' });
-    bootstrapRan = true;
 
     // 4. Build extension
     buildExtension();
@@ -305,8 +275,8 @@ async function run() {
     const token = readFileSync(join(homedir(), '.xtap', 'secret'), 'utf8').trim();
     await extPage.evaluate(async ({ token, port }) => {
       await chrome.storage.local.set({ httpToken: token, httpPort: port });
-    }, { token, port: 17381 });
-    log('Injected HTTP token into extension storage');
+    }, { token, port: E2E_DAEMON_PORT });
+    log(`Injected HTTP token into extension storage (port ${E2E_DAEMON_PORT})`);
     await extPage.close();
 
     // 9. Navigate to Fake X — triggers GraphQL fetch captured by extension

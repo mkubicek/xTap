@@ -19,7 +19,7 @@ from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
 
 VERSION = '0.2.0'
 BIND_HOST = '127.0.0.1'
-BIND_PORT = 17381
+BIND_PORT = int(os.environ.get('XTAP_DAEMON_PORT', 17381))
 MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
 XTAP_DIR = os.path.expanduser('~/.xtap')
 XTAP_SECRET = os.path.join(XTAP_DIR, 'secret')

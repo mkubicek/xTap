@@ -32,7 +32,7 @@ const REPO_ROOT = resolve(__dirname, '..', '..');
 // ---------------------------------------------------------------------------
 
 const HOST_NAME = 'com.xtap.host';
-const DAEMON_PORT = 17381;
+const DAEMON_PORT = parseInt(process.env.XTAP_DAEMON_PORT || '17382', 10);
 const XTAP_DIR = join(homedir(), '.xtap');
 const SECRET_PATH = join(XTAP_DIR, 'secret');
 const PEM_PATH = join(__dirname, 'test-extension.pem');
@@ -195,7 +195,7 @@ async function ensureDaemon() {
   const child = spawn(pythonPath, [DAEMON_PY], {
     stdio: ['ignore', logFd, logFd],
     detached: true,
-    env: { ...process.env, XTAP_LOG_LEVEL: 'debug' },
+    env: { ...process.env, XTAP_LOG_LEVEL: 'debug', XTAP_DAEMON_PORT: String(DAEMON_PORT) },
   });
   child.unref();
   closeSync(logFd);
@@ -232,11 +232,17 @@ function verifyManifest(extensionId) {
 
 function verifyNativeHost() {
   // Simulate native messaging protocol: 4-byte LE length + JSON payload
+  // Spawn through the installed wrapper (not HOST_PY directly) so we verify
+  // the wrapper script, manifest path, and python invocation end-to-end.
   const payload = Buffer.from(JSON.stringify({ type: 'GET_TOKEN' }), 'utf8');
   const header = Buffer.alloc(4);
   header.writeUInt32LE(payload.length, 0);
 
-  const result = spawnSync(findPython(), [HOST_PY], {
+  if (!existsSync(WRAPPER_PATH)) {
+    throw new Error(`Wrapper not found: ${WRAPPER_PATH}`);
+  }
+
+  const result = spawnSync(WRAPPER_PATH, [], {
     input: Buffer.concat([header, payload]),
     timeout: 5000,
     maxBuffer: 1024 * 1024,
