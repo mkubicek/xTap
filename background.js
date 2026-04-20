@@ -26,6 +26,7 @@ let stageSeq = 0;
 let _saveChain = Promise.resolve();
 let readyResolve;
 const ready = new Promise(r => { readyResolve = r; });
+const autoDumpedThisSession = new Set();
 
 // --- Recent tweets cache (for video download lookup) ---
 const MAX_RECENT_TWEETS = 1000;
@@ -552,7 +553,17 @@ function verboseLog(endpoint, data) {
   const shape = summarizeShape(data);
   console.log(`[xTap:verbose] ${endpoint} response shape: ${shape}`);
 
-  // Dump full JSON to file for reverse engineering.
+  // Auto-dump first response per endpoint per session (for agentic fixture creation)
+  if (!autoDumpedThisSession.has(endpoint)) {
+    autoDumpedThisSession.add(endpoint);
+    const ts = Date.now();
+    const filename = `dump-${endpoint}-${ts}.json`;
+    const content = JSON.stringify({ endpoint, data }, null, 2);
+    sendToHost({ type: 'DUMP', filename, content, outputDir: outputDir || undefined });
+    console.log(`[xTap:autodump] ${endpoint} → ${filename}`);
+  }
+
+  // Manual dump: target a specific endpoint or tweet IDs for multi-sample capture.
   // Configure via console:
   //   chrome.storage.local.set({verboseDumpIds: ['1234567890']})   — dump responses containing these IDs
   //   chrome.storage.local.set({verboseDumpEndpoint: 'TweetDetail'}) — dump all responses for this endpoint
@@ -579,7 +590,7 @@ function verboseLog(endpoint, data) {
     if (shouldDump) {
       const ts = Date.now();
       const filename = `dump-${endpoint}-${ts}.json`;
-      const content = JSON.stringify(data, null, 2);
+      const content = JSON.stringify({ endpoint, data }, null, 2);
       sendToHost({ type: 'DUMP', filename, content, outputDir: outputDir || undefined });
       console.log(`[xTap:dump] ${endpoint} (${reason}) → ${filename} (${content.length} chars)`);
     }
@@ -658,6 +669,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         transportError: transport === 'none'
           ? 'Daemon not running. Check ~/.xtap/daemon-stderr.log'
           : null,
+        discoveredEndpoints: [...autoDumpedThisSession],
       });
     })();
     return true;

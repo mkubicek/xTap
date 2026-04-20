@@ -12,6 +12,8 @@ const hErrorRow = document.getElementById('h-error-row');
 const hError = document.getElementById('h-error');
 const debugToggle = document.getElementById('debug-toggle');
 const verboseToggle = document.getElementById('verbose-toggle');
+const discoveredSection = document.getElementById('discovered-section');
+const discoveredList = document.getElementById('discovered-list');
 
 function refreshHealth() {
   chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (resp) => {
@@ -31,6 +33,13 @@ function refreshHealth() {
     }
     debugToggle.checked = !!resp.debugLogging;
     verboseToggle.checked = !!resp.verboseLogging;
+    // Discovered endpoints
+    if (resp.discoveredEndpoints && resp.discoveredEndpoints.length > 0) {
+      discoveredSection.style.display = '';
+      discoveredList.textContent = resp.discoveredEndpoints.join(', ');
+    } else {
+      discoveredSection.style.display = 'none';
+    }
   });
 }
 
