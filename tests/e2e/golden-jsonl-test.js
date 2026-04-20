@@ -9,8 +9,8 @@
  * the test injects the daemon HTTP token directly into chrome.storage.local.
  * The extension's reprobeTransport() storage fallback picks it up.
  *
- * Then compares the JSONL output against the expected.jsonl golden file
- * from the timeline-basic fixture pack.
+ * Then compares the JSONL output against the expected.jsonl golden files
+ * from all discovered fixture scenarios in tests/fixtures/sanitized/.
  *
  * Usage:
  *   node tests/e2e/golden-jsonl-test.js [--headed] [--port 4443]
@@ -34,10 +34,23 @@ import { tmpdir, homedir } from 'node:os';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXTENSION_DIR = join(__dirname, '.extension-out');
 const EXTENSION_ID = 'mhljdmpppgbddpoijmhjnaaondpidjfn';
-const FIXTURE_DIR = join(__dirname, '..', 'fixtures', 'sanitized', 'timeline-basic');
-const EXPECTED_JSONL = join(FIXTURE_DIR, 'expected.jsonl');
+const SANITIZED_DIR = join(__dirname, '..', 'fixtures', 'sanitized');
 const BOOTSTRAP = join(__dirname, 'native-host-bootstrap.js');
 const E2E_DAEMON_PORT = 17382;
+
+// Discover all fixture scenarios
+const scenarios = readdirSync(SANITIZED_DIR, { withFileTypes: true })
+  .filter(d => d.isDirectory() && existsSync(join(SANITIZED_DIR, d.name, 'manifest.json')))
+  .map(d => {
+    const dir = join(SANITIZED_DIR, d.name);
+    const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
+    return { name: d.name, dir, manifest };
+  });
+
+if (scenarios.length === 0) {
+  console.error('[golden-jsonl] No fixture scenarios found');
+  process.exit(1);
+}
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -71,9 +84,9 @@ function buildExtension() {
   }
 }
 
-function startFakeX(fxPort) {
+function startFakeX(fxPort, fixtureDir) {
   return new Promise((resolve, reject) => {
-    const child = fork(join(__dirname, 'fake-x.js'), ['--port', String(fxPort)], {
+    const child = fork(join(__dirname, 'fake-x.js'), ['--port', String(fxPort), '--fixture-dir', fixtureDir], {
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
 
@@ -224,13 +237,10 @@ async function run() {
     // 3. Build extension
     buildExtension();
 
-    // 4. Start Fake X
-    fakeX = await startFakeX(port);
-
-    // 5. Create temp Chrome user-data dir
+    // 4. Create temp Chrome user-data dir
     userDataDir = mkdtempSync(join(tmpdir(), 'xtap-e2e-'));
 
-    // 6. Launch Chromium with the extension
+    // 5. Launch Chromium with the extension
     const launchArgs = [
       `--disable-extensions-except=${EXTENSION_DIR}`,
       `--load-extension=${EXTENSION_DIR}`,
@@ -265,7 +275,7 @@ async function run() {
       });
     }
 
-    // 7. Verify extension is loaded and inject HTTP token
+    // 6. Verify extension is loaded and inject HTTP token
     //    Native messaging requires system Chrome manifest paths; Playwright's
     //    bundled Chromium may not find them. Inject the token directly via
     //    chrome.storage.local so the extension can reach the daemon.
@@ -283,53 +293,64 @@ async function run() {
     log(`Injected HTTP token into extension storage (port ${E2E_DAEMON_PORT})`);
     await extPage.close();
 
-    // 8. Navigate to Fake X — triggers GraphQL fetch captured by extension
-    log(`Navigating to https://x.com:${port}/...`);
-    const page = await context.newPage();
-    await page.goto(`https://x.com:${port}/`, {
-      waitUntil: 'domcontentloaded',
-      timeout: 15_000,
-    });
+    // 7. Run each scenario: start Fake X, navigate, poll, compare
+    let cumulativeTweets = 0;
+    for (const scenario of scenarios) {
+      log(`--- Scenario: ${scenario.name} ---`);
 
-    await page.waitForFunction(
-      () => document.title === 'xTap:loaded' || document.title === 'xTap:error',
-      { timeout: 15_000 },
-    );
-    const title = await page.title();
-    if (title !== 'xTap:loaded') {
-      throw new Error(
-        `Page title is "${title}" — extension interception failed`,
+      fakeX = await startFakeX(port, scenario.dir);
+
+      const page = await context.newPage();
+      await page.goto(`https://x.com:${port}/`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 15_000,
+      });
+
+      await page.waitForFunction(
+        () => document.title === 'xTap:loaded' || document.title === 'xTap:error',
+        { timeout: 15_000 },
       );
+      const title = await page.title();
+      if (title !== 'xTap:loaded') {
+        throw new Error(
+          `[${scenario.name}] Page title is "${title}" — extension interception failed`,
+        );
+      }
+      log('Extension captured GraphQL response');
+
+      // Poll for JSONL output (flush timer is ~30-45 s)
+      const expectedCount = cumulativeTweets + scenario.manifest.tweet_count;
+      log(`Waiting for ${expectedCount} cumulative tweets in JSONL output (up to 60 s)...`);
+
+      const actual = await pollForJsonl(outputDir, expectedCount, 60_000);
+      if (!actual) {
+        const contents = existsSync(outputDir) ? readdirSync(outputDir) : [];
+        throw new Error(
+          `[${scenario.name}] No JSONL with ${expectedCount}+ records after 60 s. ` +
+          `Output dir: [${contents.join(', ')}]`,
+        );
+      }
+
+      // Compare only this scenario's tweets (slice off previous scenarios)
+      const scenarioActual = actual.slice(cumulativeTweets);
+      const expectedJsonl = join(scenario.dir, scenario.manifest.files.expected);
+      const expectedLines = readFileSync(expectedJsonl, 'utf8').trim().split('\n');
+      const expected = expectedLines.map(l => JSON.parse(l));
+
+      const result = compareJsonl(scenarioActual, expected);
+      if (!result.pass) {
+        throw new Error(`[${scenario.name}] Golden JSONL mismatch: ${result.message}`);
+      }
+
+      log(`PASS ${scenario.name} — ${scenarioActual.length} tweets match golden output`);
+      cumulativeTweets = actual.length;
+
+      await page.close();
+      fakeX.kill('SIGTERM');
+      await new Promise(resolve => fakeX.once('exit', resolve));
+      fakeX = null;
     }
-    log('Extension captured GraphQL response');
 
-    // 9. Poll for JSONL output (flush timer is ~30-45 s)
-    const manifest = JSON.parse(
-      readFileSync(join(FIXTURE_DIR, 'manifest.json'), 'utf8'),
-    );
-    const expectedCount = manifest.tweet_count;
-    log(`Waiting for ${expectedCount} tweets in JSONL output (up to 60 s)...`);
-
-    const actual = await pollForJsonl(outputDir, expectedCount, 60_000);
-    if (!actual) {
-      const contents = existsSync(outputDir) ? readdirSync(outputDir) : [];
-      throw new Error(
-        `No JSONL with ${expectedCount}+ records after 60 s. ` +
-        `Output dir: [${contents.join(', ')}]`,
-      );
-    }
-
-    // 10. Compare against golden expected output
-    log('Comparing against expected.jsonl...');
-    const expectedLines = readFileSync(EXPECTED_JSONL, 'utf8').trim().split('\n');
-    const expected = expectedLines.map(l => JSON.parse(l));
-
-    const result = compareJsonl(actual, expected);
-    if (!result.pass) {
-      throw new Error(`Golden JSONL mismatch: ${result.message}`);
-    }
-
-    log(`PASS — ${actual.length} tweets match golden output`);
     passed = true;
 
   } finally {
