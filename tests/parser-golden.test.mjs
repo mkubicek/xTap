@@ -27,6 +27,10 @@ const scenarios = readdirSync(SANITIZED_DIR, { withFileTypes: true })
   })
   .filter(Boolean);
 
+if (scenarios.length === 0) {
+  throw new Error('No fixture scenarios found in ' + SANITIZED_DIR);
+}
+
 // ---------------------------------------------------------------------------
 // Field-level diff utility
 // ---------------------------------------------------------------------------
