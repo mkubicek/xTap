@@ -255,6 +255,7 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
     total_streams = 1
     stream_index = 0
     dest_count = 0
+    reported_pct = 0.0
     final_path = None
     last_lines = []
     for line in proc.stdout:
@@ -264,18 +265,24 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
             if len(last_lines) > 20:
                 last_lines.pop(0)
             print(f'[yt-dlp] {line}', file=sys.stderr)
-        # Detect multi-stream downloads ("Downloading 1 format(s): hls-707+hls-audio")
-        fm = format_re.search(line)
-        if fm:
-            total_streams = max(1, fm.group(1).count('+') + 1)
+        # Detect multi-stream downloads by counting '+' in format string
+        # ("Downloading 1 format(s): hls-707+hls-audio" → 2 streams)
+        if line.startswith('[info]'):
+            fm = format_re.search(line)
+            if fm:
+                total_streams = max(1, fm.group(1).count('+') + 1)
         # Parse progress percentage, scaled across streams
-        m = progress_re.search(line)
-        if m:
-            raw_pct = float(m.group(1))
-            effective_pct = min(
-                (stream_index * 100 + raw_pct) / total_streams, 100.0)
-            with _downloads_lock:
-                _downloads[download_id]['progress'] = effective_pct
+        if line.startswith('[download]'):
+            m = progress_re.search(line)
+            if m:
+                raw_pct = float(m.group(1))
+                pct = min((stream_index * 100 + raw_pct) / total_streams, 100.0)
+                # Never report backward progress (safety net if stream
+                # count detection is wrong or yt-dlp format changes)
+                if pct >= reported_pct:
+                    reported_pct = pct
+                    with _downloads_lock:
+                        _downloads[download_id]['progress'] = pct
         # Capture output filename from [download] or [Merger] lines
         if 'Destination:' in line:
             dest_count += 1
@@ -284,11 +291,6 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
         elif 'has already been downloaded' in line:
             dest_count += 1
             stream_index = min(dest_count - 1, total_streams - 1)
-            # Count cached stream as complete for progress
-            effective_pct = min(
-                (stream_index + 1) * 100 / total_streams, 100.0)
-            with _downloads_lock:
-                _downloads[download_id]['progress'] = effective_pct
             # "[download] <path> has already been downloaded"
             part = line.split(']', 1)[1].strip() if ']' in line else line
             final_path = part.replace(' has already been downloaded', '').strip()
