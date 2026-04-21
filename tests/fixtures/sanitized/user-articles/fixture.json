@@ -1,0 +1,2610 @@
+{
+  "data": {
+    "user": {
+      "result": {
+        "__typename": "User",
+        "timeline": {
+          "timeline": {
+            "instructions": [
+              {
+                "entries": [
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "cover_media": {
+                                    "id": "SANITIZED_fa3e5bd033be",
+                                    "media_id": "2777469976784603445",
+                                    "media_info": {
+                                      "__typename": "ApiImage",
+                                      "color_info": {
+                                        "palette": [
+                                          {
+                                            "percentage": 58.27,
+                                            "rgb": {
+                                              "blue": 222,
+                                              "green": 235,
+                                              "red": 249
+                                            }
+                                          },
+                                          {
+                                            "percentage": 15.18,
+                                            "rgb": {
+                                              "blue": 133,
+                                              "green": 222,
+                                              "red": 234
+                                            }
+                                          },
+                                          {
+                                            "percentage": 5.24,
+                                            "rgb": {
+                                              "blue": 119,
+                                              "green": 142,
+                                              "red": 237
+                                            }
+                                          },
+                                          {
+                                            "percentage": 5.04,
+                                            "rgb": {
+                                              "blue": 129,
+                                              "green": 202,
+                                              "red": 166
+                                            }
+                                          },
+                                          {
+                                            "percentage": 4.26,
+                                            "rgb": {
+                                              "blue": 127,
+                                              "green": 178,
+                                              "red": 245
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "original_img_height": 710,
+                                      "original_img_url": "https://pbs.twimg.com/sanitized/06e4461fed6a.jpg",
+                                      "original_img_width": 1774
+                                    },
+                                    "media_key": "3_2040683678523637760"
+                                  },
+                                  "id": "SANITIZED_d625c8867bdb",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1775371893
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1775371893
+                                  },
+                                  "preview_text": "Orbit wave kraft apex index trace gamma sigma. gamma kraft vortex vortex optic prism ionic echo. valve micro zonal solar ionic.",
+                                  "rest_id": "261830802484",
+                                  "title": "Ultra optic kraft query mesa core alpha."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "8522401703929171399"
+                              ],
+                              "editable_until_msecs": "1775375493000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 210,
+                              "bookmarked": true,
+                              "conversation_id_str": "8522401703929171399",
+                              "created_at": "Sun Apr 05 06:51:33 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_966d002e1d",
+                                    "expanded_url": "https://example.com/sanitized/f8e6ed4de5",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_e7e0cb51"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 171,
+                              "favorited": false,
+                              "full_text": "Haze helix ratio terra.",
+                              "id_str": "905108854956",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 0,
+                              "reply_count": 17,
+                              "retweet_count": 2,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "905108854956",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "16416",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-8522401703929171399",
+                    "sortIndex": "1020424094526615764"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "cover_media": {
+                                    "id": "SANITIZED_046892bf44f9",
+                                    "media_id": "2306083930367696360",
+                                    "media_info": {
+                                      "__typename": "ApiImage",
+                                      "color_info": {
+                                        "palette": [
+                                          {
+                                            "percentage": 59.11,
+                                            "rgb": {
+                                              "blue": 220,
+                                              "green": 233,
+                                              "red": 248
+                                            }
+                                          },
+                                          {
+                                            "percentage": 14.19,
+                                            "rgb": {
+                                              "blue": 132,
+                                              "green": 223,
+                                              "red": 233
+                                            }
+                                          },
+                                          {
+                                            "percentage": 5.06,
+                                            "rgb": {
+                                              "blue": 131,
+                                              "green": 205,
+                                              "red": 163
+                                            }
+                                          },
+                                          {
+                                            "percentage": 4.92,
+                                            "rgb": {
+                                              "blue": 125,
+                                              "green": 178,
+                                              "red": 244
+                                            }
+                                          },
+                                          {
+                                            "percentage": 4.5,
+                                            "rgb": {
+                                              "blue": 110,
+                                              "green": 118,
+                                              "red": 237
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "original_img_height": 604,
+                                      "original_img_url": "https://pbs.twimg.com/sanitized/527793ad5636.jpg",
+                                      "original_img_width": 1510
+                                    },
+                                    "media_key": "3_2038149626730278912"
+                                  },
+                                  "id": "SANITIZED_f9ded5767d99",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1775371792
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1774767748
+                                  },
+                                  "preview_text": "Foxtrot optic solar wave query relay drift quartz. jade yield foxtrot kite gamma yield wave yield. orbit joule grid foxtrot.",
+                                  "rest_id": "245886629383",
+                                  "title": "Mesa ratio widen haze node beta micro."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "8566492360084009186"
+                              ],
+                              "editable_until_msecs": "1774771348000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 220,
+                              "bookmarked": false,
+                              "conversation_id_str": "8566492360084009186",
+                              "created_at": "Sun Mar 29 07:02:28 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_68b171c933",
+                                    "expanded_url": "https://example.com/sanitized/a947e586e2",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_499f8445"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 187,
+                              "favorited": false,
+                              "full_text": "Kraft ionic sigma micro.",
+                              "id_str": "122792578054",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 1,
+                              "reply_count": 20,
+                              "retweet_count": 2,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "122792578054",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "14427",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-8566492360084009186",
+                    "sortIndex": "3968203101880915469"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "id": "SANITIZED_8baf39237958",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1774122781
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1774122781
+                                  },
+                                  "preview_text": "Foxtrot optic solar wave query relay drift quartz. jade yield foxtrot kite gamma yield wave yield. orbit joule grid foxtrot.",
+                                  "rest_id": "289843768290",
+                                  "title": "Glyph wave logic query unity gamma node."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "5123188778018280265"
+                              ],
+                              "editable_until_msecs": "1774126381000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 222,
+                              "bookmarked": false,
+                              "conversation_id_str": "5123188778018280265",
+                              "created_at": "Sat Mar 21 19:53:01 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_5f2f6e3798",
+                                    "expanded_url": "https://example.com/sanitized/85b08c6abe",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_418621c8"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 161,
+                              "favorited": false,
+                              "full_text": "Widen core query ionic.",
+                              "id_str": "592753624451",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 0,
+                              "reply_count": 12,
+                              "retweet_count": 1,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "592753624451",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "13794",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-5123188778018280265",
+                    "sortIndex": "6446102999507690289"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "id": "SANITIZED_f3f9374d89db",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1773507328
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1773506123
+                                  },
+                                  "preview_text": "Foxtrot optic solar wave query relay drift quartz. jade yield foxtrot kite gamma yield wave yield. orbit joule grid foxtrot.",
+                                  "rest_id": "130463463411",
+                                  "title": "Optic micro yield micro optic node lunar."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "1112622143004065384"
+                              ],
+                              "editable_until_msecs": "1773509723000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 232,
+                              "bookmarked": false,
+                              "conversation_id_str": "1112622143004065384",
+                              "created_at": "Sat Mar 14 16:35:23 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_4515d8ecdc",
+                                    "expanded_url": "https://example.com/sanitized/034dd0440e",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_b973fd03"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 187,
+                              "favorited": false,
+                              "full_text": "Alpha node apex apex echo.",
+                              "id_str": "293047059165",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 0,
+                              "reply_count": 14,
+                              "retweet_count": 3,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "293047059165",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "12333",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-1112622143004065384",
+                    "sortIndex": "6246411320219680547"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "id": "SANITIZED_3471e19fb5f0",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1772975990
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1772865899
+                                  },
+                                  "preview_text": "Foxtrot optic solar wave query relay drift quartz. jade yield foxtrot kite gamma yield wave yield. orbit joule grid foxtrot.",
+                                  "rest_id": "480169153145",
+                                  "title": "Prism valve orbit orbit."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "8511881747913975421"
+                              ],
+                              "editable_until_msecs": "1772869499000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 263,
+                              "bookmarked": false,
+                              "conversation_id_str": "8511881747913975421",
+                              "created_at": "Sat Mar 07 06:44:59 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_c813c70b34",
+                                    "expanded_url": "https://example.com/sanitized/dc63cf839c",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_5fff11d5"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 182,
+                              "favorited": false,
+                              "full_text": "Glyph drift widen vortex.",
+                              "id_str": "970346563490",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 1,
+                              "reply_count": 17,
+                              "retweet_count": 4,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "970346563490",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "45958",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-8511881747913975421",
+                    "sortIndex": "2386793683788027195"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "id": "SANITIZED_68bbac346bef",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1772391297
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1772391297
+                                  },
+                                  "preview_text": "Foxtrot optic solar wave query relay drift quartz. jade yield foxtrot kite gamma yield wave yield. orbit joule grid foxtrot.",
+                                  "rest_id": "456476245674",
+                                  "title": "Pulse nexus delta optic zonal trace query."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "3577207859051471915"
+                              ],
+                              "editable_until_msecs": "1772394897000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 246,
+                              "bookmarked": false,
+                              "conversation_id_str": "3577207859051471915",
+                              "created_at": "Sun Mar 01 18:54:57 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_048b3ecfef",
+                                    "expanded_url": "https://example.com/sanitized/f861486f28",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_a2d22b97"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 174,
+                              "favorited": false,
+                              "full_text": "Widen optic pulse xenon.",
+                              "id_str": "900849105948",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 3,
+                              "reply_count": 14,
+                              "retweet_count": 2,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "900849105948",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "34447",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-3577207859051471915",
+                    "sortIndex": "4662987084632250782"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "id": "SANITIZED_f8c8121b9deb",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1771912393
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1771912393
+                                  },
+                                  "preview_text": "Glyph trace widen flux grid zonal xenon quartz. glyph trace lunar glyph optic nexus micro echo. glyph joule foxtrot prism.",
+                                  "rest_id": "359649530264",
+                                  "title": "Grid beta jade haze optic ratio wave widen. vortex terra prism micro."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "8443619391608446109"
+                              ],
+                              "editable_until_msecs": "1771915993000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 140,
+                              "bookmarked": false,
+                              "conversation_id_str": "8443619391608446109",
+                              "created_at": "Tue Feb 24 05:53:13 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_906f61679e",
+                                    "expanded_url": "https://example.com/sanitized/c489c786b9",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_ed46afa3"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 104,
+                              "favorited": false,
+                              "full_text": "Helix mesa echo nexus pulse.",
+                              "id_str": "225666192008",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 0,
+                              "reply_count": 4,
+                              "retweet_count": 0,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "225666192008",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "8702",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-8443619391608446109",
+                    "sortIndex": "3857555720999801783"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "id": "SANITIZED_1c107afa5259",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1771835067
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1771834286
+                                  },
+                                  "preview_text": "Lunar jade solar logic joule trace delta gamma. ionic trace core solar drift lunar widen quartz. flux kite foxtrot ultra zonal.",
+                                  "rest_id": "394212152306",
+                                  "title": "Jade node alpha quartz ratio echo grid xenon. ionic ionic widen micro."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "1050573815646234460"
+                              ],
+                              "editable_until_msecs": "1771837887000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 127,
+                              "bookmarked": false,
+                              "conversation_id_str": "1050573815646234460",
+                              "created_at": "Mon Feb 23 08:11:27 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_ae3c7ada6a",
+                                    "expanded_url": "https://example.com/sanitized/ab94f3fb79",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_32be0c69"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 150,
+                              "favorited": false,
+                              "full_text": "Pulse glyph trace ionic.",
+                              "id_str": "576729378577",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 1,
+                              "reply_count": 12,
+                              "retweet_count": 1,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "576729378577",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "14598",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-1050573815646234460",
+                    "sortIndex": "2743087872953325841"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "id": "SANITIZED_d101f6b629e4",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1771707274
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1771707274
+                                  },
+                                  "preview_text": "Foxtrot optic solar wave query relay drift quartz. jade yield foxtrot kite gamma yield wave yield. orbit joule grid foxtrot.",
+                                  "rest_id": "222806871434",
+                                  "title": "Orbit valve zonal nexus logic bloom."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "5834632303453035368"
+                              ],
+                              "editable_until_msecs": "1771710874000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 197,
+                              "bookmarked": false,
+                              "conversation_id_str": "5834632303453035368",
+                              "created_at": "Sat Feb 21 20:54:34 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_ae3c7ada6a",
+                                    "expanded_url": "https://example.com/sanitized/d72395721b",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_c899ab98"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 169,
+                              "favorited": false,
+                              "full_text": "Kraft glyph unity apex.",
+                              "id_str": "434953211468",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 2,
+                              "reply_count": 8,
+                              "retweet_count": 4,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "434953211468",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "32299",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-5834632303453035368",
+                    "sortIndex": "8434443441903900594"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "id": "SANITIZED_67373f2823b6",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1771168039
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1771168039
+                                  },
+                                  "preview_text": "Foxtrot optic solar wave query relay drift quartz. jade yield foxtrot kite gamma yield wave yield. orbit joule grid foxtrot.",
+                                  "rest_id": "269828295948",
+                                  "title": "Node valve foxtrot zonal joule foxtrot."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "1011523868042915170"
+                              ],
+                              "editable_until_msecs": "1771171639000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 211,
+                              "bookmarked": false,
+                              "conversation_id_str": "1011523868042915170",
+                              "created_at": "Sun Feb 15 15:07:19 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_712cd6922e",
+                                    "expanded_url": "https://example.com/sanitized/3673e46bd7",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_f1ff69b1"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 191,
+                              "favorited": false,
+                              "full_text": "Glyph kite unity query.",
+                              "id_str": "110900722835",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 1,
+                              "reply_count": 24,
+                              "retweet_count": 3,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "110900722835",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "21669",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-1011523868042915170",
+                    "sortIndex": "1923886671556446357"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "id": "SANITIZED_5bf074fc1d97",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1770577957
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1770577957
+                                  },
+                                  "preview_text": "Solar zonal trace ultra solar kraft terra query. bloom drift apex ultra nexus trace pulse orbit. valve nexus echo unity glyph.",
+                                  "rest_id": "996402082126",
+                                  "title": "Jade grid widen terra node kraft."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "8297556799354132528"
+                              ],
+                              "editable_until_msecs": "1770581557000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 270,
+                              "bookmarked": false,
+                              "conversation_id_str": "8297556799354132528",
+                              "created_at": "Sun Feb 08 19:12:37 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_2d8337a9cc",
+                                    "expanded_url": "https://example.com/sanitized/29673ba864",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_957f0ba1"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 205,
+                              "favorited": false,
+                              "full_text": "Query grid kite micro sigma.",
+                              "id_str": "488131094028",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 1,
+                              "reply_count": 29,
+                              "retweet_count": 3,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "488131094028",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "20324",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-8297556799354132528",
+                    "sortIndex": "9300661416354969328"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineItem",
+                      "entryType": "TimelineTimelineItem",
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "article": {
+                              "article_results": {
+                                "result": {
+                                  "id": "SANITIZED_84223041ed2b",
+                                  "lifecycle_state": {
+                                    "modified_at_secs": 1769954344
+                                  },
+                                  "metadata": {
+                                    "first_published_at_secs": 1769954344
+                                  },
+                                  "preview_text": "Unity widen ionic alpha drift zonal node kraft. wave mesa ultra kite gamma unity relay yield. joule quartz pulse jade grid.",
+                                  "rest_id": "126847722664",
+                                  "title": "Wave jade echo gamma haze beta ionic."
+                                }
+                              }
+                            },
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/sanitized/ee0ed82a731e.jpg"
+                                  },
+                                  "core": {
+                                    "created_at": "Sat Nov 29 18:41:00 +0000 2014",
+                                    "name": "User 610e3e",
+                                    "screen_name": "user_177791b9"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "SANITIZED_fc37b7abc435",
+                                  "is_blue_verified": true,
+                                  "legacy": {
+                                    "default_profile": true,
+                                    "default_profile_image": false,
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit.",
+                                    "entities": {
+                                      "description": {}
+                                    },
+                                    "fast_followers_count": 0,
+                                    "favourites_count": 24812,
+                                    "follow_request_sent": false,
+                                    "followers_count": 58086,
+                                    "friends_count": 319,
+                                    "has_custom_timelines": false,
+                                    "is_translator": false,
+                                    "listed_count": 951,
+                                    "media_count": 16830,
+                                    "needs_phone_verification": false,
+                                    "normal_followers_count": 58086,
+                                    "notifications": true,
+                                    "pinned_tweet_ids_str": [
+                                      "8702284508520760048"
+                                    ],
+                                    "possibly_sensitive": false,
+                                    "profile_banner_url": "https://pbs.twimg.com/sanitized/a269531484ff.jpg",
+                                    "profile_interstitial_type": "",
+                                    "statuses_count": 64315,
+                                    "time_zone": "",
+                                    "translator_type": "none",
+                                    "url": "",
+                                    "utc_offset": 0,
+                                    "want_retweets": true,
+                                    "withheld_description": "",
+                                    "withheld_scope": ""
+                                  },
+                                  "location": {
+                                    "location": "Somewhere"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "professional": {
+                                    "category": [
+                                      {
+                                        "icon_name": "IconBriefcaseStroke",
+                                        "id": 713,
+                                        "name": "User 161373"
+                                      }
+                                    ],
+                                    "professional_type": "Creator",
+                                    "rest_id": "826484749088"
+                                  },
+                                  "profile_bio": {
+                                    "description": "Ultra helix node echo core wave gamma vortex. delta quartz ionic mesa gamma apex ionic valve. relay pulse query beta orbit."
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": true,
+                                    "muting": false
+                                  },
+                                  "rest_id": "568793795593",
+                                  "super_follow_eligible": true,
+                                  "super_followed_by": false,
+                                  "super_following": true,
+                                  "verification": {
+                                    "verified": false
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "1822623311959686325"
+                              ],
+                              "editable_until_msecs": "1769957944000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "exclusivityInfo": {
+                              "creator_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "core": {
+                                    "screen_name": "user_177791b9"
+                                  }
+                                }
+                              }
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {
+                              "is_image_editable_by_grok": false
+                            },
+                            "grok_translated_post_with_availability": {
+                              "is_available": false
+                            },
+                            "is_translatable": false,
+                            "legacy": {
+                              "bookmark_count": 205,
+                              "bookmarked": false,
+                              "conversation_id_str": "1822623311959686325",
+                              "created_at": "Sun Feb 01 13:59:04 +0000 2026",
+                              "display_text_range": [
+                                0,
+                                23
+                              ],
+                              "entities": {
+                                "hashtags": [],
+                                "smarttags": [],
+                                "symbols": [],
+                                "timestamps": [],
+                                "urls": [
+                                  {
+                                    "display_url": "example.com/san_315d846f7a",
+                                    "expanded_url": "https://example.com/sanitized/d1cf49d0eb",
+                                    "indices": [
+                                      0,
+                                      23
+                                    ],
+                                    "url": "https://t.co/SAN_01396dc3"
+                                  }
+                                ],
+                                "user_mentions": []
+                              },
+                              "favorite_count": 204,
+                              "favorited": true,
+                              "full_text": "Beta delta logic yield.",
+                              "id_str": "262868366999",
+                              "is_quote_status": false,
+                              "lang": "zxx",
+                              "possibly_sensitive": false,
+                              "possibly_sensitive_editable": true,
+                              "quote_count": 1,
+                              "reply_count": 17,
+                              "retweet_count": 2,
+                              "retweeted": false,
+                              "user_id_str": "568793795593"
+                            },
+                            "rest_id": "262868366999",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "29998",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "entryId": "tweet-1822623311959686325",
+                    "sortIndex": "5109281585864946180"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineCursor",
+                      "cursorType": "Top",
+                      "entryType": "TimelineTimelineCursor",
+                      "value": "DAAJAAA"
+                    },
+                    "entryId": "cursor-top-2458592332548819291",
+                    "sortIndex": "2458592332548819291"
+                  },
+                  {
+                    "content": {
+                      "__typename": "TimelineTimelineCursor",
+                      "cursorType": "Bottom",
+                      "entryType": "TimelineTimelineCursor",
+                      "value": "DAABCgABHGYFb7L___IKAAIZwZf_9fMwhAgAAwAAAAIAAA"
+                    },
+                    "entryId": "cursor-bottom-7923227362329922968",
+                    "sortIndex": "7923227362329922968"
+                  }
+                ],
+                "type": "TimelineAddEntries"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

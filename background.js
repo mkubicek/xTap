@@ -610,6 +610,9 @@ const IGNORED_ENDPOINTS = new Set([
   'UserSuperFollowTweets', 'NotificationsTimeline', 'AuthenticatePeriscope',
   'BookmarkFoldersSlice', 'EditBookmarkFolder', 'fetchPostQuery',
   'useReadableMessagesSnapshotMutation', 'UsersByRestIds',
+  'CreatorStudioTabBarItemQuery', 'DelegatedAccountListQuery',
+  'HandleShareBannerQuery', 'isEligibleForVoButtonUpsellQuery',
+  'useEligibleForHandleShareBannerQuery', 'useRelayDelegateDataPendingQuery',
 ]);
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
