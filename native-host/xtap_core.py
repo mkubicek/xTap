@@ -251,7 +251,7 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
         text=True,
     )
     progress_re = re.compile(r'(\d+\.?\d*)%')
-    format_re = re.compile(r'Downloading (\d+) format')
+    format_re = re.compile(r'Downloading \d+ format\(s\): (.+)')
     total_streams = 1
     stream_index = 0
     dest_count = 0
@@ -264,10 +264,10 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
             if len(last_lines) > 20:
                 last_lines.pop(0)
             print(f'[yt-dlp] {line}', file=sys.stderr)
-        # Detect multi-stream downloads ("Downloading 2 format(s): video+audio")
+        # Detect multi-stream downloads ("Downloading 1 format(s): hls-707+hls-audio")
         fm = format_re.search(line)
         if fm:
-            total_streams = max(1, int(fm.group(1)))
+            total_streams = max(1, fm.group(1).count('+') + 1)
         # Parse progress percentage, scaled across streams
         m = progress_re.search(line)
         if m:
