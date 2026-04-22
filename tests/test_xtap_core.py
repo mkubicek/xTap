@@ -390,3 +390,187 @@ class TestGetDownloadStatus:
         assert result['status'] == 'done'
         assert result['path'] == '/tmp/video.mp4'
         del xtap_core._downloads['test-done']
+
+
+# ---------------------------------------------------------------------------
+# _YtdlpProgress
+# ---------------------------------------------------------------------------
+
+
+def _feed_lines(lines):
+    """Helper: feed a list of lines into a fresh _YtdlpProgress tracker."""
+    t = xtap_core._YtdlpProgress()
+    history = []
+    for line in lines:
+        t.feed(line)
+        history.append(t.progress)
+    return t, history
+
+
+class TestYtdlpProgressSingleStream:
+    def test_basic_progress(self):
+        t, h = _feed_lines([
+            '[info] 123: Downloading 1 format(s): hls-707',
+            '[download] Destination: /tmp/video.mp4',
+            '[download]   0.0%',
+            '[download]  50.0%',
+            '[download] 100.0%',
+        ])
+        assert t.progress == 100.0
+        assert t.final_path == '/tmp/video.mp4'
+
+    def test_defaults_to_single_stream(self):
+        """No format line at all — total_streams stays 1."""
+        t, h = _feed_lines([
+            '[download] Destination: /tmp/video.mp4',
+            '[download]  50.0%',
+            '[download] 100.0%',
+        ])
+        assert t.progress == 100.0
+
+
+class TestYtdlpProgressMultiStream:
+    def test_two_stream_scaling(self):
+        """Two HLS streams: progress should go 0->50->100, not 0->100->0->100."""
+        t, h = _feed_lines([
+            '[info] 123: Downloading 2 format(s): hls-707+hls-audio',
+            '[download] Destination: /tmp/video.mp4',
+            '[download]   0.0%',
+            '[download]  50.0%',
+            '[download] 100.0%',
+            '[download] Destination: /tmp/audio.m4a',
+            '[download]   0.0%',
+            '[download]  50.0%',
+            '[download] 100.0%',
+            '[Merger] Merging formats into "/tmp/final.mp4"',
+        ])
+        assert t.progress == 100.0
+        assert t.final_path == '/tmp/final.mp4'
+        # After stream 1 completes, progress should be 50%, not 100%
+        assert h[4] == 50.0  # stream 1 at 100% raw -> 50% scaled
+
+    def test_progress_never_decreases(self):
+        """Monotonic guard: progress must never go backward."""
+        t, _ = _feed_lines([
+            '[info] 123: Downloading 2 format(s): hls-707+hls-audio',
+            '[download] Destination: /tmp/video.mp4',
+            '[download]  80.0%',
+            '[download]  30.0%',  # yt-dlp quirk: lower than previous
+        ])
+        assert t.progress == 40.0  # 80% of first stream = 40% overall
+
+    def test_three_streams(self):
+        t, _ = _feed_lines([
+            '[info] 123: Downloading 3 format(s): hls-707+hls-audio+hls-subs',
+            '[download] Destination: /tmp/a.mp4',
+            '[download] 100.0%',
+            '[download] Destination: /tmp/b.m4a',
+            '[download] 100.0%',
+            '[download] Destination: /tmp/c.vtt',
+            '[download] 100.0%',
+        ])
+        # Each stream is 1/3: after stream 1=33.3, stream 2=66.7, stream 3=100
+        assert t.progress == 100.0
+
+
+class TestYtdlpProgressCachedStreams:
+    def test_cached_stream_counts_as_complete(self):
+        t, h = _feed_lines([
+            '[info] 123: Downloading 2 format(s): hls-707+hls-audio',
+            '[download] /tmp/video.mp4 has already been downloaded',
+            '[download] Destination: /tmp/audio.m4a',
+            '[download]  50.0%',
+            '[download] 100.0%',
+        ])
+        assert h[1] == 50.0  # cached stream = 50% (1 of 2 done)
+        assert t.progress == 100.0
+        assert t.final_path == '/tmp/audio.m4a'
+
+    def test_both_streams_cached(self):
+        t, _ = _feed_lines([
+            '[info] 123: Downloading 2 format(s): hls-707+hls-audio',
+            '[download] /tmp/video.mp4 has already been downloaded',
+            '[download] /tmp/audio.m4a has already been downloaded',
+        ])
+        assert t.progress == 100.0
+
+
+class TestYtdlpProgressRecalibration:
+    def test_unexpected_extra_stream(self):
+        """Format line says 1 stream, but 2 Destination lines appear."""
+        t, h = _feed_lines([
+            '[download] Destination: /tmp/video.mp4',
+            '[download] 100.0%',
+            '[download] Destination: /tmp/audio.m4a',  # surprise!
+            '[download]   0.0%',
+            '[download]  50.0%',
+            '[download] 100.0%',
+        ])
+        # After recalibration to 2 streams, should reach 100%
+        assert t.progress == 100.0
+        assert t.total_streams == 2
+
+    def test_recalibration_rewinds_progress(self):
+        """When a surprise stream appears, progress rewinds to correct value."""
+        t, h = _feed_lines([
+            '[download] Destination: /tmp/video.mp4',
+            '[download] 100.0%',  # thinks it's done: 100%
+        ])
+        assert t.progress == 100.0
+        # Now a second stream appears
+        t.feed('[download] Destination: /tmp/audio.m4a')
+        assert t.progress == 50.0  # recalibrated: 1 of 2 done
+        assert t.total_streams == 2
+
+    def test_unexpected_cached_after_live(self):
+        """Live stream finishes, then a cached stream appears unexpectedly."""
+        t, _ = _feed_lines([
+            '[download] Destination: /tmp/video.mp4',
+            '[download] 100.0%',
+            '[download] /tmp/audio.m4a has already been downloaded',
+        ])
+        assert t.progress == 100.0  # both done
+
+
+class TestYtdlpProgressPoisoning:
+    def test_percent_in_tweet_title_ignored(self):
+        """A tweet title containing '%' must not affect progress."""
+        t, h = _feed_lines([
+            '[info] 123: Downloading 1 format(s): hls-707',
+            '[download] Destination: /tmp/100% agree [123].mp4',
+            '[download]  25.0%',
+        ])
+        assert t.progress == 25.0  # not 100
+
+    def test_non_download_line_with_percent(self):
+        """Lines not starting with [download] are ignored for progress."""
+        t, _ = _feed_lines([
+            '[info] 123: 100% of something',
+            '[download] Destination: /tmp/video.mp4',
+            '[download]  10.0%',
+        ])
+        assert t.progress == 10.0
+
+    def test_already_downloaded_line_with_percent(self):
+        """'has already been downloaded' lines don't trigger progress regex."""
+        t, _ = _feed_lines([
+            '[info] 123: Downloading 2 format(s): hls-707+hls-audio',
+            '[download] /tmp/50% off [123].mp4 has already been downloaded',
+            '[download] Destination: /tmp/audio.m4a',
+            '[download]  60.0%',
+        ])
+        # Cached stream = 50% (1 of 2), then 60% of stream 2 = 80% overall
+        assert t.progress == 80.0
+
+
+class TestYtdlpProgressMerger:
+    def test_merger_updates_final_path(self):
+        t, _ = _feed_lines([
+            '[info] 123: Downloading 2 format(s): hls-707+hls-audio',
+            '[download] Destination: /tmp/video.mp4',
+            '[download] 100.0%',
+            '[download] Destination: /tmp/audio.m4a',
+            '[download] 100.0%',
+            '[Merger] Merging formats into "/tmp/final.mp4"',
+        ])
+        assert t.final_path == '/tmp/final.mp4'

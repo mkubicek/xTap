@@ -101,7 +101,13 @@ function checkForVideo() {
 
       // Show video section
       const typeLabel = resp.mediaType === 'animated_gif' ? 'GIF' : 'Video';
-      const duration = resp.durationMs ? ` (${Math.round(resp.durationMs / 1000)}s)` : '';
+      let duration = '';
+      if (resp.durationMs) {
+        const totalSec = Math.round(resp.durationMs / 1000);
+        duration = totalSec >= 60
+          ? ` (${Math.floor(totalSec / 60)}m ${totalSec % 60}s)`
+          : ` (${totalSec}s)`;
+      }
       videoLabel.textContent = `${typeLabel} detected${duration}`;
       videoSection.style.display = '';
 

@@ -227,6 +227,73 @@ def start_download(download_id, tweet_url, direct_url, out_dir, post_date=''):  
     t.start()
 
 
+class _YtdlpProgress:
+    """Parse yt-dlp stdout and scale progress across multiple HLS streams.
+
+    Call feed(line) for each stripped stdout line.  Read .progress for the
+    current 0-100 value and .final_path for the last detected output path.
+    """
+
+    _progress_re = re.compile(r'(\d+\.?\d*)%')
+    _format_re = re.compile(r'Downloading \d+ format\(s\): (.+)')
+
+    def __init__(self):
+        self.total_streams = 1
+        self.stream_index = 0
+        self.dest_count = 0
+        self.progress = 0.0
+        self.final_path = None
+
+    def feed(self, line: str):
+        # Detect multi-stream downloads by counting '+' in format string
+        # ("Downloading 1 format(s): hls-707+hls-audio" -> 2 streams)
+        if line.startswith('[info]'):
+            fm = self._format_re.search(line)
+            if fm:
+                self.total_streams = max(1, fm.group(1).count('+') + 1)
+
+        # Parse progress percentage, scaled across streams.
+        # Exclude Destination / already-downloaded lines so a tweet title
+        # containing "%" (e.g. "100% agree") doesn't poison progress.
+        if line.startswith('[download]') and 'Destination:' not in line and 'has already been downloaded' not in line:
+            m = self._progress_re.search(line)
+            if m:
+                raw_pct = float(m.group(1))
+                pct = min((self.stream_index * 100 + raw_pct) / self.total_streams, 100.0)
+                # Never report backward progress (safety net if stream
+                # count detection is wrong or yt-dlp format changes)
+                if pct >= self.progress:
+                    self.progress = pct
+
+        # Capture output filename from [download] or [Merger] lines
+        if 'Destination:' in line:
+            self.dest_count += 1
+            if self.dest_count > self.total_streams:
+                # More streams than the format line indicated (or format
+                # line was missing).  Recalibrate so the monotonic guard
+                # doesn't lock progress at 100% for the rest of the download.
+                self.total_streams = self.dest_count
+                self.progress = min(
+                    self.progress,
+                    (self.dest_count - 1) * 100.0 / self.total_streams)
+            self.stream_index = min(self.dest_count - 1, self.total_streams - 1)
+            self.final_path = line.split('Destination:', 1)[1].strip()
+        elif 'has already been downloaded' in line:
+            self.dest_count += 1
+            if self.dest_count > self.total_streams:
+                self.total_streams = self.dest_count
+            self.stream_index = min(self.dest_count - 1, self.total_streams - 1)
+            # Count cached stream as complete for progress
+            pct = min((self.stream_index + 1) * 100.0 / self.total_streams, 100.0)
+            if pct >= self.progress:
+                self.progress = pct
+            # "[download] <path> has already been downloaded"
+            part = line.split(']', 1)[1].strip() if ']' in line else line
+            self.final_path = part.replace(' has already been downloaded', '').strip()
+        elif '[Merger]' in line and 'Merging formats into' in line:
+            self.final_path = line.split('Merging formats into "', 1)[1].rstrip('"').strip() if '"' in line else self.final_path
+
+
 def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pragma: no cover
     """Download using yt-dlp with progress parsing.
 
@@ -250,13 +317,7 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
         stderr=subprocess.STDOUT,
         text=True,
     )
-    progress_re = re.compile(r'(\d+\.?\d*)%')
-    format_re = re.compile(r'Downloading \d+ format\(s\): (.+)')
-    total_streams = 1
-    stream_index = 0
-    dest_count = 0
-    reported_pct = 0.0
-    final_path = None
+    tracker = _YtdlpProgress()
     last_lines = []
     for line in proc.stdout:
         line = line.strip()
@@ -265,37 +326,9 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
             if len(last_lines) > 20:
                 last_lines.pop(0)
             print(f'[yt-dlp] {line}', file=sys.stderr)
-        # Detect multi-stream downloads by counting '+' in format string
-        # ("Downloading 1 format(s): hls-707+hls-audio" → 2 streams)
-        if line.startswith('[info]'):
-            fm = format_re.search(line)
-            if fm:
-                total_streams = max(1, fm.group(1).count('+') + 1)
-        # Parse progress percentage, scaled across streams
-        if line.startswith('[download]'):
-            m = progress_re.search(line)
-            if m:
-                raw_pct = float(m.group(1))
-                pct = min((stream_index * 100 + raw_pct) / total_streams, 100.0)
-                # Never report backward progress (safety net if stream
-                # count detection is wrong or yt-dlp format changes)
-                if pct >= reported_pct:
-                    reported_pct = pct
-                    with _downloads_lock:
-                        _downloads[download_id]['progress'] = pct
-        # Capture output filename from [download] or [Merger] lines
-        if 'Destination:' in line:
-            dest_count += 1
-            stream_index = min(dest_count - 1, total_streams - 1)
-            final_path = line.split('Destination:', 1)[1].strip()
-        elif 'has already been downloaded' in line:
-            dest_count += 1
-            stream_index = min(dest_count - 1, total_streams - 1)
-            # "[download] <path> has already been downloaded"
-            part = line.split(']', 1)[1].strip() if ']' in line else line
-            final_path = part.replace(' has already been downloaded', '').strip()
-        elif '[Merger]' in line and 'Merging formats into' in line:
-            final_path = line.split('Merging formats into "', 1)[1].rstrip('"').strip() if '"' in line else final_path
+        tracker.feed(line)
+        with _downloads_lock:
+            _downloads[download_id]['progress'] = tracker.progress
     proc.wait()
     if proc.returncode != 0:
         # Include yt-dlp's error output in the exception
@@ -303,6 +336,7 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
         detail = error_lines[-1] if error_lines else (last_lines[-1] if last_lines else '')
         raise RuntimeError(f'yt-dlp failed: {detail}' if detail else f'yt-dlp exited with code {proc.returncode}')
     # Move completed file from staging dir to final video_dir
+    final_path = tracker.final_path
     if final_path and os.path.isfile(final_path):
         dest_path = os.path.join(video_dir, os.path.basename(final_path))
         shutil.move(final_path, dest_path)
