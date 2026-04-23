@@ -67,18 +67,17 @@ h2 {
 }
 
 .small-btn {
-  padding: 3px 10px;
+  padding: 4px 10px;
   font-size: 11px;
   border: 1px solid #2f3336;
-  border-radius: 4px;
-  background: transparent;
-  color: #8b98a5;
+  border-radius: 6px;
+  background: #1e2a36;
+  color: #e7e9ea;
   cursor: pointer;
 }
 
 .small-btn:hover {
   background: #2f3336;
-  color: #e7e9ea;
 }
 
 /* Health table */
@@ -164,6 +163,22 @@ h2 {
   background: #233240;
 }
 
+.events-empty-row {
+  display: none;
+}
+
+.events-table tbody#events-body:empty + .events-empty-row {
+  display: table-row-group;
+}
+
+.events-empty {
+  padding: 20px;
+  text-align: center;
+  color: #8b98a5;
+  font-size: 12px;
+  font-family: inherit;
+}
+
 .status-ACCEPTED { color: #4ade80; }
 .status-DEDUPLICATED { color: #8b98a5; }
 .status-PARSER_ERROR { color: #f87171; }
@@ -246,4 +261,11 @@ button:focus-visible,
 .action-btn:focus-visible,
 .small-btn:focus-visible {
   outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }

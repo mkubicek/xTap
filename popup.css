@@ -21,11 +21,17 @@ h1 {
   margin-bottom: 12px;
 }
 
+.status-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
 .status {
   font-size: 13px;
   padding: 6px 10px;
   border-radius: 6px;
-  margin-bottom: 14px;
 }
 
 .status.connected {
@@ -44,15 +50,13 @@ h1 {
   background: #3b1c1c;
   padding: 6px 10px;
   border-radius: 6px;
-  margin-bottom: 14px;
-  margin-top: -8px;
   line-height: 1.4;
 }
 
 .stats {
   display: flex;
   gap: 16px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .stat {
@@ -100,7 +104,7 @@ button.paused {
 }
 
 .video-section {
-  margin-top: 14px;
+  margin-top: 16px;
   border-top: 1px solid #2f3336;
   padding-top: 12px;
 }
@@ -155,7 +159,7 @@ button.paused {
 }
 
 .settings {
-  margin-top: 14px;
+  margin-top: 16px;
   border-top: 1px solid #2f3336;
   padding-top: 12px;
 }
@@ -225,4 +229,11 @@ button.paused {
 button:focus-visible,
 .save-btn:focus-visible {
   outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }
