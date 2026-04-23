@@ -173,6 +173,7 @@ function startDownload(tweetId, tweetUrl, directUrl, postDate) {
 }
 
 function pollDownload(downloadId) {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   pollTimer = setInterval(() => {
     chrome.runtime.sendMessage({
       type: 'DOWNLOAD_STATUS',
