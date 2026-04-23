@@ -137,7 +137,7 @@ _ytdlp_path = None
 _ytdlp_checked = False
 _downloads = {}
 _downloads_lock = threading.Lock()
-_video_extensions = {'.mp4', '.m4v', '.mov', '.webm', '.mkv'}
+_video_extensions = {'.mp4'}
 
 
 def check_ytdlp():  # pragma: no cover
