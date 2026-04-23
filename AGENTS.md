@@ -30,7 +30,8 @@ background.js (Service Worker, ES module)
 │   Managed by launchd (macOS), systemd (Linux), Scheduled Task  │
 │   (Windows). Bearer token auth from ~/.xtap/secret             │
 │   Endpoints: GET /status, POST /tweets, /log, /test-path,     │
-│   /check-ytdlp, /download-video, /download-status             │
+│   /check-ytdlp, /check-video-file, /download-video,           │
+│   /download-status                                            │
 └────────────────────────────────────────────────────────────────┘
 ┌─── Native messaging (token bootstrap only) ───────────────────┐
 │ xtap_host.py (Python, stdio)                                   │
@@ -50,7 +51,7 @@ debug-YYYY-MM-DD.log     (when debug logging enabled)
 - **Random event channel:** The CustomEvent name is generated per page load (`'_' + Math.random().toString(36).slice(2)`) and passed via a `<meta>` tag that's immediately removed. Avoids predictable DOM markers.
 - **HTTP-only transport:** All data flows through the HTTP daemon (`xtap_daemon.py`), managed by launchd (macOS), systemd (Linux), or Scheduled Task (Windows). On macOS, it runs outside browser TCC sandboxes, allowing writes to protected paths. If the daemon goes down, tweets are buffered in memory and the extension reprobes every 30 seconds until the daemon recovers.
 - **Token bootstrap via native messaging:** On first run, the extension connects to `xtap_host.py` via native messaging to request `GET_TOKEN` (reads `~/.xtap/secret`). The token is cached in `chrome.storage.local` for subsequent HTTP requests. The native host handles nothing else — all data goes through HTTP.
-- **Shared core logic:** `xtap_core.py` contains all file I/O logic (load seen IDs, resolve output dir, write tweets/logs, test path), used by `xtap_daemon.py`.
+- **Shared core logic:** `xtap_core.py` contains all file I/O logic (load seen IDs, resolve output dir, write tweets/logs, test path, existing-video lookup), used by `xtap_daemon.py`.
 - **Environment detection:** `isDevMode = !chrome.runtime.getManifest().update_url` — packed CWS extensions have `update_url`, unpacked don't. Used to switch seenIds storage between session (dev) and local (production).
 - **Volatile dev cache:** In dev mode (unpacked), `seenIds` is stored in `chrome.storage.session`, which clears on extension reload. This eliminates the need to manually clear storage during development. Production behavior is unchanged (persisted to `chrome.storage.local`).
 - **Dedup in service worker:** Multiple tabs feed the same service worker. `seenIds` Set (max 50,000, FIFO eviction) prevents duplicates. In production, persisted to `chrome.storage.local` across sessions; in dev mode, uses volatile `chrome.storage.session`. Both host and daemon also load seen IDs from existing JSONL files on startup.

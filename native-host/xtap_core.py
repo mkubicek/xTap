@@ -137,6 +137,7 @@ _ytdlp_path = None
 _ytdlp_checked = False
 _downloads = {}
 _downloads_lock = threading.Lock()
+_VIDEO_EXTENSIONS = {'.mp4', '.m4v', '.mov', '.webm', '.mkv'}
 
 
 def check_ytdlp():  # pragma: no cover
@@ -174,6 +175,35 @@ def _date_prefix(post_date):
         return ''
 
 
+def _tweet_id_from_url(tweet_url):
+    """Extract a tweet/status ID from an X/Twitter status URL."""
+    m = re.search(r'/status/(\d+)', tweet_url or '')
+    return m.group(1) if m else ''
+
+
+def find_existing_video(tweet_url, out_dir):
+    """Return an existing downloaded video path for tweet_url, or None."""
+    tweet_id = _tweet_id_from_url(tweet_url)
+    if not tweet_id:
+        return None
+
+    video_dir = os.path.join(out_dir, 'videos')
+    if not os.path.isdir(video_dir):
+        return None
+
+    id_re = re.compile(rf'(^|[^0-9]){re.escape(tweet_id)}([^0-9]|$)')
+    for name in sorted(os.listdir(video_dir)):
+        path = os.path.join(video_dir, name)
+        if not os.path.isfile(path) or name.endswith('.part'):
+            continue
+        stem, ext = os.path.splitext(name)
+        if ext.lower() not in _VIDEO_EXTENSIONS:
+            continue
+        if name == f'{tweet_id}{ext}' or id_re.search(stem):
+            return path
+    return None
+
+
 def download_direct(direct_url, tweet_id, video_dir, post_date=''):  # pragma: no cover
     """Download video via direct CDN URL. Returns the file path."""
     os.makedirs(video_dir, exist_ok=True)
@@ -207,8 +237,7 @@ def start_download(download_id, tweet_url, direct_url, out_dir, post_date=''):  
                 with _downloads_lock:
                     _downloads[download_id]['progress'] = 0
                 # Extract tweet ID from URL
-                m = re.search(r'/status/(\d+)', tweet_url)
-                tweet_id = m.group(1) if m else download_id
+                tweet_id = _tweet_id_from_url(tweet_url) or download_id
                 path = download_direct(direct_url, tweet_id, video_dir, post_date)
                 with _downloads_lock:
                     _downloads[download_id].update(

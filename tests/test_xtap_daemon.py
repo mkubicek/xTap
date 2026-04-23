@@ -243,6 +243,57 @@ class TestAuthorizedRequest:
 
 
 # ---------------------------------------------------------------------------
+# Tests — Video file checks
+# ---------------------------------------------------------------------------
+
+class TestVideoFileCheck:
+
+    def test_check_video_file_existing(self, daemon_url):
+        import shutil
+        import tempfile
+
+        out_dir = tempfile.mkdtemp(dir=os.path.expanduser('~'), prefix='.xtap-test-')
+        try:
+            video_dir = os.path.join(out_dir, 'videos')
+            os.makedirs(video_dir)
+            video_path = os.path.join(video_dir, 'Example title [12345].mp4')
+            with open(video_path, 'wb') as f:
+                f.write(b'video')
+
+            status, body = _post(
+                daemon_url, '/check-video-file',
+                body={'outputDir': out_dir, 'tweetUrl': 'https://x.com/u/status/12345'},
+                token=TEST_TOKEN,
+            )
+
+            assert status == 200
+            assert body['ok'] is True
+            assert body['exists'] is True
+            assert body['path'] == video_path
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+
+    def test_check_video_file_missing(self, daemon_url):
+        import shutil
+        import tempfile
+
+        out_dir = tempfile.mkdtemp(dir=os.path.expanduser('~'), prefix='.xtap-test-')
+        try:
+            status, body = _post(
+                daemon_url, '/check-video-file',
+                body={'outputDir': out_dir, 'tweetUrl': 'https://x.com/u/status/12345'},
+                token=TEST_TOKEN,
+            )
+
+            assert status == 200
+            assert body['ok'] is True
+            assert body['exists'] is False
+            assert body['path'] is None
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
 # Tests — Concurrency (issue #8)
 # ---------------------------------------------------------------------------
 

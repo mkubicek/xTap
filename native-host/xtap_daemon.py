@@ -15,7 +15,8 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
                        validate_output_dir, write_tweets, write_log,
                        write_dump, test_path,
-                       check_ytdlp, start_download, get_download_status)
+                       check_ytdlp, start_download, get_download_status,
+                       find_existing_video)
 
 VERSION = '0.22.0'
 BIND_HOST = '127.0.0.1'
@@ -138,6 +139,8 @@ class DaemonHandler(BaseHTTPRequestHandler):
             self._handle_test_path(body)
         elif self.path == '/check-ytdlp':
             self._handle_check_ytdlp(body)
+        elif self.path == '/check-video-file':
+            self._handle_check_video_file(body)
         elif self.path == '/download-video':
             self._handle_download_video(body)
         elif self.path == '/download-status':
@@ -213,6 +216,21 @@ class DaemonHandler(BaseHTTPRequestHandler):
         available = check_ytdlp()
         log_debug(f'  yt-dlp available: {available}')
         self._send_json({'ok': True, 'available': available})
+
+    def _handle_check_video_file(self, body):
+        try:
+            tweet_url = body.get('tweetUrl', '')
+            msg_dir = body.get('outputDir', '').strip()
+            with _state_lock:
+                out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
+            path = find_existing_video(tweet_url, out_dir)
+            log_debug(f'  Video file exists: {bool(path)} -> {tweet_url}')
+            self._send_json({'ok': True, 'exists': bool(path), 'path': path})
+        except ValueError as e:
+            self._send_json({'ok': False, 'error': str(e)}, 400)
+        except Exception as e:
+            log_info(f'ERROR /check-video-file: {e}')
+            self._send_json({'ok': False, 'error': str(e)}, 500)
 
     def _handle_download_video(self, body):
         try:

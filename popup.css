@@ -154,6 +154,16 @@ button.paused {
   color: #f87171;
 }
 
+.download-status {
+  background: #0d3b1e;
+  color: #4ade80;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 14px;
+  text-align: center;
+}
+
 .settings {
   margin-top: 14px;
   border-top: 1px solid #2f3336;

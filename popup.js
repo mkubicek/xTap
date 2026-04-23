@@ -9,6 +9,7 @@ const videoSection = document.getElementById('video-section');
 const videoLabel = document.getElementById('video-label');
 const ytdlpHint = document.getElementById('ytdlp-hint');
 const downloadBtn = document.getElementById('download-btn');
+const downloadStatus = document.getElementById('download-status');
 
 function render(state) {
   sessionEl.textContent = state.sessionCount.toLocaleString();
@@ -81,6 +82,7 @@ saveDirBtn.addEventListener('click', () => {
 let pollTimer = null;
 let currentTransport = null;
 let videoChecked = false;
+let idleDownloadLabel = 'Download Video';
 
 function checkForVideo() {
   // Video download requires the HTTP daemon
@@ -113,6 +115,8 @@ function checkForVideo() {
 
       // Resume polling if there's an active download for this tweet
       if (resp.activeDownloadId) {
+        downloadStatus.style.display = 'none';
+        downloadBtn.style.display = '';
         downloadBtn.textContent = 'Downloading...';
         downloadBtn.className = 'download-btn downloading';
         downloadBtn.disabled = true;
@@ -120,15 +124,25 @@ function checkForVideo() {
         return;
       }
 
+      if (resp.alreadyDownloaded) {
+        showAlreadyDownloaded();
+        return;
+      }
+
       // Check yt-dlp availability
       chrome.runtime.sendMessage({ type: 'CHECK_YTDLP' }, (ytResp) => {
         const hasYtdlp = ytResp && ytResp.ok && ytResp.available;
         if (hasYtdlp) {
-          downloadBtn.textContent = 'Download Video';
+          idleDownloadLabel = 'Download Video';
         } else {
           ytdlpHint.style.display = '';
-          downloadBtn.textContent = 'Download MP4';
+          idleDownloadLabel = 'Download MP4';
         }
+        downloadStatus.style.display = 'none';
+        downloadBtn.style.display = '';
+        downloadBtn.textContent = idleDownloadLabel;
+        downloadBtn.className = 'download-btn';
+        downloadBtn.disabled = false;
 
         downloadBtn.onclick = () => startDownload(tweetId, resp.tweetUrl, resp.directUrl, resp.postDate);
       });
@@ -137,6 +151,8 @@ function checkForVideo() {
 }
 
 function startDownload(tweetId, tweetUrl, directUrl, postDate) {
+  downloadStatus.style.display = 'none';
+  downloadBtn.style.display = '';
   downloadBtn.disabled = true;
   downloadBtn.textContent = 'Starting...';
   downloadBtn.className = 'download-btn downloading';
@@ -172,9 +188,11 @@ function pollDownload(downloadId) {
         }
       } else if (resp.status === 'done') {
         clearInterval(pollTimer);
+        pollTimer = null;
         showDownloadResult('success', 'Download complete');
       } else if (resp.status === 'error') {
         clearInterval(pollTimer);
+        pollTimer = null;
         showDownloadResult('error', resp.error || 'Download failed');
       }
     });
@@ -182,14 +200,35 @@ function pollDownload(downloadId) {
 }
 
 function showDownloadResult(type, message) {
+  downloadStatus.style.display = 'none';
+  downloadBtn.style.display = '';
   downloadBtn.textContent = message;
   downloadBtn.className = `download-btn ${type}`;
   downloadBtn.disabled = true;
-  setTimeout(() => {
-    downloadBtn.textContent = 'Download Video';
-    downloadBtn.className = 'download-btn';
-    downloadBtn.disabled = false;
-  }, 3000);
+  if (type === 'success') {
+    setTimeout(() => showAlreadyDownloaded(), 3000);
+  } else {
+    setTimeout(() => {
+      downloadStatus.style.display = 'none';
+      downloadBtn.style.display = '';
+      downloadBtn.textContent = idleDownloadLabel;
+      downloadBtn.className = 'download-btn';
+      downloadBtn.disabled = false;
+    }, 3000);
+  }
+}
+
+function showAlreadyDownloaded() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  ytdlpHint.style.display = 'none';
+  downloadStatus.textContent = 'Already downloaded';
+  downloadStatus.style.display = '';
+  downloadBtn.style.display = 'none';
+  downloadBtn.disabled = true;
+  downloadBtn.onclick = null;
 }
 
 document.getElementById('open-debug').addEventListener('click', () => {

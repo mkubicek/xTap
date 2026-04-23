@@ -34,6 +34,46 @@ class TestDatePrefix:
 
 
 # ---------------------------------------------------------------------------
+# find_existing_video
+# ---------------------------------------------------------------------------
+
+
+class TestFindExistingVideo:
+    def test_missing_video_dir(self, tmp_path):
+        assert xtap_core.find_existing_video('https://x.com/u/status/12345', str(tmp_path)) is None
+
+    def test_direct_download_filename(self, tmp_path):
+        video_dir = tmp_path / 'videos'
+        video_dir.mkdir()
+        path = video_dir / '2024.01.15_12345.mp4'
+        path.write_bytes(b'video')
+
+        assert xtap_core.find_existing_video('https://x.com/u/status/12345', str(tmp_path)) == str(path)
+
+    def test_ytdlp_filename(self, tmp_path):
+        video_dir = tmp_path / 'videos'
+        video_dir.mkdir()
+        path = video_dir / 'Example title [12345].mp4'
+        path.write_bytes(b'video')
+
+        assert xtap_core.find_existing_video('https://twitter.com/u/status/12345', str(tmp_path)) == str(path)
+
+    def test_substring_id_does_not_match(self, tmp_path):
+        video_dir = tmp_path / 'videos'
+        video_dir.mkdir()
+        (video_dir / 'Example title [9123456].mp4').write_bytes(b'video')
+
+        assert xtap_core.find_existing_video('https://x.com/u/status/12345', str(tmp_path)) is None
+
+    def test_partial_files_are_ignored(self, tmp_path):
+        video_dir = tmp_path / 'videos'
+        video_dir.mkdir()
+        (video_dir / '12345.mp4.part').write_bytes(b'partial')
+
+        assert xtap_core.find_existing_video('https://x.com/u/status/12345', str(tmp_path)) is None
+
+
+# ---------------------------------------------------------------------------
 # load_seen_ids
 # ---------------------------------------------------------------------------
 

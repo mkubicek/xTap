@@ -330,6 +330,10 @@ async function sendToHost(msg) {
   } else if (msg.type === 'CHECK_YTDLP') {
     path = '/check-ytdlp';
     body = {};
+  } else if (msg.type === 'CHECK_VIDEO_FILE') {
+    path = '/check-video-file';
+    body = { tweetUrl: msg.tweetUrl };
+    if (msg.outputDir) body.outputDir = msg.outputDir;
   } else if (msg.type === 'DOWNLOAD_VIDEO') {
     path = '/download-video';
     body = { tweetUrl: msg.tweetUrl, directUrl: msg.directUrl, postDate: msg.postDate };
@@ -730,25 +734,47 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === 'CHECK_VIDEO') {
-    const tweet = recentTweets.get(msg.tweetId);
-    if (!tweet || !tweet.media || tweet.media.length === 0) {
-      sendResponse({ hasVideo: false });
-      return true;
-    }
-    const videoMedia = tweet.media.find(m => m.type === 'video' || m.type === 'animated_gif');
-    if (!videoMedia) {
-      sendResponse({ hasVideo: false });
-      return true;
-    }
-    sendResponse({
-      hasVideo: true,
-      tweetUrl: tweet.url || `https://x.com/i/status/${msg.tweetId}`,
-      directUrl: videoMedia.url || null,
-      mediaType: videoMedia.type,
-      durationMs: videoMedia.duration_ms || null,
-      postDate: tweet.created_at || null,
-      activeDownloadId: activeDownloads.get(msg.tweetId) || null,
-    });
+    (async () => {
+      const tweet = recentTweets.get(msg.tweetId);
+      if (!tweet || !tweet.media || tweet.media.length === 0) {
+        sendResponse({ hasVideo: false });
+        return;
+      }
+      const videoMedia = tweet.media.find(m => m.type === 'video' || m.type === 'animated_gif');
+      if (!videoMedia) {
+        sendResponse({ hasVideo: false });
+        return;
+      }
+
+      const tweetUrl = tweet.url || `https://x.com/i/status/${msg.tweetId}`;
+      const response = {
+        hasVideo: true,
+        tweetUrl,
+        directUrl: videoMedia.url || null,
+        mediaType: videoMedia.type,
+        durationMs: videoMedia.duration_ms || null,
+        postDate: tweet.created_at || null,
+        activeDownloadId: activeDownloads.get(msg.tweetId) || null,
+        alreadyDownloaded: false,
+        downloadedPath: null,
+      };
+
+      try {
+        const fileResp = await sendToHost({
+          type: 'CHECK_VIDEO_FILE',
+          tweetUrl,
+          outputDir: outputDir || undefined,
+        });
+        if (fileResp?.ok && fileResp.exists) {
+          response.alreadyDownloaded = true;
+          response.downloadedPath = fileResp.path || null;
+        }
+      } catch (e) {
+        console.warn('[xTap] Video file check failed:', e.message);
+      }
+
+      sendResponse(response);
+    })();
     return true;
   }
 
