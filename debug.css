@@ -24,8 +24,11 @@ h1 {
 }
 
 h2 {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8b98a5;
   margin-bottom: 12px;
   display: flex;
   align-items: center;
@@ -45,6 +48,9 @@ h2 {
   align-items: center;
   gap: 12px;
   font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #e7e9ea;
 }
 
 .auto-scroll-label {
@@ -155,7 +161,7 @@ h2 {
 }
 
 .events-table tr:hover {
-  background: #1e2a36;
+  background: #233240;
 }
 
 .status-ACCEPTED { color: #4ade80; }
@@ -229,4 +235,15 @@ h2 {
 
 .sandbox-output.error {
   color: #f87171;
+}
+
+:focus-visible {
+  outline: 2px solid #1d9bf0;
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+.action-btn:focus-visible,
+.small-btn:focus-visible {
+  outline-offset: 3px;
 }
