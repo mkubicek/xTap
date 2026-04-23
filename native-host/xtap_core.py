@@ -204,6 +204,13 @@ def find_existing_video(tweet_url, out_dir):
     return None
 
 
+def _ytdlp_output_template(staging_dir, tweet_url, post_date=''):
+    prefix = _date_prefix(post_date)
+    tweet_id = _tweet_id_from_url(tweet_url)
+    id_part = f' [{tweet_id}]' if tweet_id else ' [%(id)s]'
+    return os.path.join(staging_dir, prefix + '%(title)s' + id_part + '.%(ext)s')
+
+
 def download_direct(direct_url, tweet_id, video_dir, post_date=''):  # pragma: no cover
     """Download video via direct CDN URL. Returns the file path."""
     os.makedirs(video_dir, exist_ok=True)
@@ -331,8 +338,7 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
     """
     staging_dir = os.path.join(video_dir, '.downloading')
     os.makedirs(staging_dir, exist_ok=True)
-    prefix = _date_prefix(post_date)
-    output_template = os.path.join(staging_dir, prefix + '%(title)s [%(id)s].%(ext)s')
+    output_template = _ytdlp_output_template(staging_dir, tweet_url, post_date)
     cmd = [
         _ytdlp_path,
         '--newline', '--progress',

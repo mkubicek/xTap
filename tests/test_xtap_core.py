@@ -74,6 +74,27 @@ class TestFindExistingVideo:
 
 
 # ---------------------------------------------------------------------------
+# _ytdlp_output_template
+# ---------------------------------------------------------------------------
+
+
+class TestYtdlpOutputTemplate:
+    def test_uses_tweet_id_from_url(self, tmp_path):
+        template = xtap_core._ytdlp_output_template(
+            str(tmp_path),
+            'https://x.com/user/status/12345',
+            '2024-01-15T12:34:56.000Z',
+        )
+
+        assert template == os.path.join(str(tmp_path), '2024.01.15_%(title)s [12345].%(ext)s')
+
+    def test_falls_back_to_ytdlp_id_without_status_url(self, tmp_path):
+        template = xtap_core._ytdlp_output_template(str(tmp_path), 'https://x.com/user')
+
+        assert template == os.path.join(str(tmp_path), '%(title)s [%(id)s].%(ext)s')
+
+
+# ---------------------------------------------------------------------------
 # load_seen_ids
 # ---------------------------------------------------------------------------
 
