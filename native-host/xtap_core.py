@@ -137,7 +137,7 @@ _ytdlp_path = None
 _ytdlp_checked = False
 _downloads = {}
 _downloads_lock = threading.Lock()
-_VIDEO_EXTENSIONS = {'.mp4', '.m4v', '.mov', '.webm', '.mkv'}
+_video_extensions = {'.mp4', '.m4v', '.mov', '.webm', '.mkv'}
 
 
 def check_ytdlp():  # pragma: no cover
@@ -197,7 +197,7 @@ def find_existing_video(tweet_url, out_dir):
         if not os.path.isfile(path) or name.endswith('.part'):
             continue
         stem, ext = os.path.splitext(name)
-        if ext.lower() not in _VIDEO_EXTENSIONS:
+        if ext.lower() not in _video_extensions:
             continue
         if name == f'{tweet_id}{ext}' or id_re.search(stem):
             return path
