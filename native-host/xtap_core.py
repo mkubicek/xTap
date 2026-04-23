@@ -303,7 +303,12 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
     staging_dir = os.path.join(video_dir, '.downloading')
     os.makedirs(staging_dir, exist_ok=True)
     prefix = _date_prefix(post_date)
-    output_template = os.path.join(staging_dir, prefix + '%(title)s [%(id)s].%(ext)s')
+    # Pin the tweet status ID in the filename rather than relying on %(id)s,
+    # which some yt-dlp Twitter sub-extractors (amplify/broadcast/card) fill
+    # with a media or broadcast ID instead of the tweet ID.
+    m = re.search(r'/status/(\d+)', tweet_url)
+    id_part = m.group(1) if m else '%(id)s'
+    output_template = os.path.join(staging_dir, prefix + '%(title)s [' + id_part + '].%(ext)s')
     cmd = [
         _ytdlp_path,
         '--newline', '--progress',
