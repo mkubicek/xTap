@@ -205,12 +205,14 @@ button.paused {
   display: block;
   text-align: center;
   margin-top: 12px;
-  font-size: 11px;
-  color: #8b98a5;
+  font-size: 12px;
+  color: #1d9bf0;
   cursor: pointer;
   text-decoration: none;
+  padding: 4px;
+  border-radius: 4px;
 }
 
 .debug-link:hover {
-  color: #1d9bf0;
+  text-decoration: underline;
 }
