@@ -15,9 +15,10 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
                        validate_output_dir, write_tweets, write_log,
                        write_dump, test_path,
-                       check_ytdlp, start_download, get_download_status)
+                       check_ytdlp, start_download, get_download_status,
+                       inject_image_local_paths, get_image_downloader)
 
-VERSION = '0.22.0'
+VERSION = '0.23.0'
 BIND_HOST = '127.0.0.1'
 BIND_PORT = int(os.environ.get('XTAP_DAEMON_PORT', 17381))
 MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -150,12 +151,21 @@ class DaemonHandler(BaseHTTPRequestHandler):
     def _handle_tweets(self, body):
         try:
             msg_dir = body.get('outputDir', '').strip()
+            image_download = bool(body.get('image_download'))
             with _state_lock:
                 out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
                 tweets = body.get('tweets', [])
+                # Compute local_path for photo media before write so the JSONL
+                # records the planned on-disk location regardless of whether
+                # the user has image download enabled this session.
+                pending_images = inject_image_local_paths(tweets)
                 count, dupes = write_tweets(tweets, out_dir, _seen_ids)
-            log_debug(f'  Tweets: {count} written, {dupes} dupes -> {out_dir}')
-            self._send_json({'ok': True, 'count': count, 'dupes': dupes})
+            queued = 0
+            if image_download and pending_images:
+                get_image_downloader().enqueue(pending_images, out_dir)
+                queued = len(pending_images)
+            log_debug(f'  Tweets: {count} written, {dupes} dupes, {queued} images queued -> {out_dir}')
+            self._send_json({'ok': True, 'count': count, 'dupes': dupes, 'images_queued': queued})
         except ValueError as e:
             self._send_json({'ok': False, 'error': str(e)}, 400)
         except Exception as e:

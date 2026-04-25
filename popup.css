@@ -201,6 +201,22 @@ button.paused {
   background: #b91c1c;
 }
 
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #e7e9ea;
+  cursor: pointer;
+}
+
+.settings-toggle input {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+
 .debug-link {
   display: block;
   text-align: center;

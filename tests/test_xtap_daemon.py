@@ -231,6 +231,68 @@ class TestAuthorizedRequest:
         assert body['ok'] is True
         conn.close()
 
+    def test_tweets_image_download_flag_enqueues(self, daemon_url, monkeypatch):
+        """When image_download=true, photo media should be enqueued."""
+        import shutil
+        import tempfile
+
+        out_dir = tempfile.mkdtemp(dir=os.path.expanduser('~'), prefix='.xtap-test-')
+        captured = []
+
+        class _Fake:
+            def enqueue(self, jobs, where):
+                captured.append((list(jobs), where))
+
+        monkeypatch.setattr(xtap_daemon, 'get_image_downloader', lambda: _Fake())
+        try:
+            tweet = {
+                'id': '42',
+                'media': [{'type': 'photo', 'url': 'https://pbs.twimg.com/media/HGK.jpg:orig'}],
+            }
+            status, body = _post(
+                daemon_url, '/tweets',
+                body={'outputDir': out_dir, 'tweets': [tweet], 'image_download': True},
+                token=TEST_TOKEN,
+            )
+            assert status == 200
+            assert body['ok'] is True
+            assert body['images_queued'] == 1
+            assert len(captured) == 1
+            jobs, where = captured[0]
+            assert where == os.path.realpath(out_dir)
+            assert jobs[0]['rel_path'] == 'media/42/HGK.jpg'
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+
+    def test_tweets_no_flag_does_not_enqueue(self, daemon_url, monkeypatch):
+        """Without image_download flag, the downloader is not invoked."""
+        import shutil
+        import tempfile
+
+        out_dir = tempfile.mkdtemp(dir=os.path.expanduser('~'), prefix='.xtap-test-')
+        called = []
+        monkeypatch.setattr(xtap_daemon, 'get_image_downloader', lambda: called.append(1))
+        try:
+            tweet = {
+                'id': '43',
+                'media': [{'type': 'photo', 'url': 'https://pbs.twimg.com/media/HGK.jpg:orig'}],
+            }
+            status, body = _post(
+                daemon_url, '/tweets',
+                body={'outputDir': out_dir, 'tweets': [tweet]},
+                token=TEST_TOKEN,
+            )
+            assert status == 200
+            assert body['images_queued'] == 0
+            assert called == []
+            # local_path was still injected on the tweet (written to JSONL).
+            files = [p for p in os.listdir(out_dir) if p.startswith('tweets-')]
+            assert len(files) == 1
+            line = open(os.path.join(out_dir, files[0])).readline()
+            assert '"local_path": "media/43/HGK.jpg"' in line
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+
     def test_dump_rejects_dotdot_filename(self, daemon_url):
         """POST /dump with '..' filename should return 400."""
         status, body = _post(

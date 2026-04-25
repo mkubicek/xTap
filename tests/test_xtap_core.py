@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import threading
 
 import pytest
 
@@ -574,3 +575,240 @@ class TestYtdlpProgressMerger:
             '[Merger] Merging formats into "/tmp/final.mp4"',
         ])
         assert t.final_path == '/tmp/final.mp4'
+
+
+# ---------------------------------------------------------------------------
+# _photo_filename / inject_image_local_paths
+# ---------------------------------------------------------------------------
+
+
+class TestPhotoFilename:
+    def test_strips_orig_suffix(self):
+        assert xtap_core._photo_filename(
+            'https://pbs.twimg.com/media/HGK3a3qbAAADTqD.jpg:orig'
+        ) == 'HGK3a3qbAAADTqD.jpg'
+
+    def test_strips_large_suffix(self):
+        assert xtap_core._photo_filename(
+            'https://pbs.twimg.com/media/abc.png:large'
+        ) == 'abc.png'
+
+    def test_no_suffix(self):
+        assert xtap_core._photo_filename(
+            'https://pbs.twimg.com/media/abc.jpg'
+        ) == 'abc.jpg'
+
+    def test_empty_returns_none(self):
+        assert xtap_core._photo_filename('') is None
+        assert xtap_core._photo_filename(None) is None
+
+    def test_url_with_no_path(self):
+        assert xtap_core._photo_filename('https://pbs.twimg.com/') is None
+
+
+class TestInjectImageLocalPaths:
+    def test_adds_local_path_to_photos(self):
+        tweets = [{
+            'id': '123',
+            'media': [
+                {'type': 'photo', 'url': 'https://pbs.twimg.com/media/abc.jpg:orig'},
+            ],
+        }]
+        pending = xtap_core.inject_image_local_paths(tweets)
+        assert tweets[0]['media'][0]['local_path'] == 'media/123/abc.jpg'
+        assert pending == [{
+            'tweet_id': '123',
+            'url': 'https://pbs.twimg.com/media/abc.jpg:orig',
+            'rel_path': 'media/123/abc.jpg',
+        }]
+
+    def test_skips_video_media(self):
+        tweets = [{
+            'id': '123',
+            'media': [
+                {'type': 'video', 'url': 'https://video.twimg.com/foo.mp4'},
+            ],
+        }]
+        pending = xtap_core.inject_image_local_paths(tweets)
+        assert pending == []
+        assert 'local_path' not in tweets[0]['media'][0]
+
+    def test_skips_tweet_without_id(self):
+        tweets = [{'media': [{'type': 'photo', 'url': 'https://pbs.twimg.com/media/x.jpg'}]}]
+        pending = xtap_core.inject_image_local_paths(tweets)
+        assert pending == []
+
+    def test_handles_missing_media(self):
+        tweets = [{'id': '123'}, {'id': '456', 'media': []}]
+        assert xtap_core.inject_image_local_paths(tweets) == []
+
+    def test_enqueues_article_media(self):
+        tweets = [{
+            'id': '999',
+            'media': [],
+            'is_article': True,
+            'article': {
+                'media': [
+                    {
+                        'url': 'https://pbs.twimg.com/media/HGxr957a0AAzHOk.jpg',
+                        'local_path': 'media/999/HGxr957a0AAzHOk.jpg',
+                    },
+                    {
+                        'url': 'https://pbs.twimg.com/media/HGxr2u5a8AANAOy.jpg',
+                        'local_path': 'media/999/HGxr2u5a8AANAOy.jpg',
+                    },
+                ],
+            },
+        }]
+        pending = xtap_core.inject_image_local_paths(tweets)
+        assert [p['rel_path'] for p in pending] == [
+            'media/999/HGxr957a0AAzHOk.jpg',
+            'media/999/HGxr2u5a8AANAOy.jpg',
+        ]
+
+    def test_skips_article_media_without_local_path(self):
+        tweets = [{
+            'id': '999',
+            'article': {'media': [{'url': 'https://pbs.twimg.com/media/x.jpg'}]},
+        }]
+        assert xtap_core.inject_image_local_paths(tweets) == []
+
+    def test_skips_photo_without_url(self):
+        tweets = [{'id': '123', 'media': [{'type': 'photo', 'url': None}]}]
+        pending = xtap_core.inject_image_local_paths(tweets)
+        assert pending == []
+        assert 'local_path' not in tweets[0]['media'][0]
+
+
+# ---------------------------------------------------------------------------
+# ImageDownloader
+# ---------------------------------------------------------------------------
+
+
+class _FakeResponse:
+    def __init__(self, body):
+        import io
+        self._buf = io.BytesIO(body)
+
+    def read(self, n=-1):
+        return self._buf.read(n)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _wait_for_queue(downloader, timeout=5):
+    """Block until the downloader's worker has drained its queue."""
+    deadline = __import__('time').monotonic() + timeout
+    while downloader.queue.unfinished_tasks > 0:
+        if __import__('time').monotonic() > deadline:
+            raise AssertionError('downloader queue did not drain')
+        __import__('time').sleep(0.02)
+
+
+@pytest.fixture
+def downloader(monkeypatch):
+    """A fresh ImageDownloader with no rate-limit delay."""
+    monkeypatch.setenv('XTAP_IMAGE_DELAY_MS', '0')
+    monkeypatch.delenv('XTAP_MAX_MEDIA_MB', raising=False)
+    return xtap_core.ImageDownloader()
+
+
+class TestImageDownloader:
+    def test_successful_download(self, downloader, tmp_path, monkeypatch):
+        body = b'\x89PNG\r\n' + b'x' * 100
+        opens = []
+
+        def fake_urlopen(req, timeout=None):
+            opens.append(req.full_url)
+            return _FakeResponse(body)
+
+        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen', fake_urlopen)
+        downloader.enqueue([{
+            'tweet_id': '1',
+            'url': 'https://pbs.twimg.com/media/abc.jpg:orig',
+            'rel_path': 'media/1/abc.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(downloader)
+        dest = tmp_path / 'media' / '1' / 'abc.jpg'
+        assert dest.read_bytes() == body
+        assert opens == ['https://pbs.twimg.com/media/abc.jpg:orig']
+        # Manifest written
+        entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
+        assert entries[0]['status'] == 'ok'
+        assert entries[0]['bytes'] == len(body)
+        assert entries[0]['tweet_id'] == '1'
+
+    def test_idempotent_skip_existing(self, downloader, tmp_path, monkeypatch):
+        dest_dir = tmp_path / 'media' / '1'
+        dest_dir.mkdir(parents=True)
+        (dest_dir / 'abc.jpg').write_bytes(b'cached-bytes')
+
+        called = []
+        def fake_urlopen(req, timeout=None):
+            called.append(req.full_url)
+            return _FakeResponse(b'should-not-run')
+
+        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen', fake_urlopen)
+        downloader.enqueue([{
+            'tweet_id': '1',
+            'url': 'https://pbs.twimg.com/media/abc.jpg:orig',
+            'rel_path': 'media/1/abc.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(downloader)
+        assert called == []
+        assert (dest_dir / 'abc.jpg').read_bytes() == b'cached-bytes'
+        entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
+        assert entries[0]['status'] == 'exists'
+
+    def test_404_logs_error(self, downloader, tmp_path, monkeypatch):
+        import urllib.error
+        def fake_urlopen(req, timeout=None):
+            raise urllib.error.HTTPError(req.full_url, 404, 'Not Found', {}, None)
+        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen', fake_urlopen)
+        downloader.enqueue([{
+            'tweet_id': '2',
+            'url': 'https://pbs.twimg.com/media/missing.jpg:orig',
+            'rel_path': 'media/2/missing.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(downloader)
+        assert not (tmp_path / 'media' / '2' / 'missing.jpg').exists()
+        entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
+        assert entries[0]['status'] == 'error:http_404'
+
+    def test_quota_skips(self, tmp_path, monkeypatch):
+        # 0 MB quota — every job should be skipped.
+        monkeypatch.setenv('XTAP_IMAGE_DELAY_MS', '0')
+        monkeypatch.setenv('XTAP_MAX_MEDIA_MB', '0')
+        dl = xtap_core.ImageDownloader()
+        called = []
+        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen',
+                            lambda *a, **kw: called.append(1) or _FakeResponse(b''))
+        dl.enqueue([{
+            'tweet_id': '3',
+            'url': 'https://pbs.twimg.com/media/q.jpg',
+            'rel_path': 'media/3/q.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(dl)
+        assert called == []
+        entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
+        assert entries[0]['status'] == 'skipped:quota'
+
+    def test_atomic_partial_cleanup_on_error(self, downloader, tmp_path, monkeypatch):
+        import urllib.error
+        def fake_urlopen(req, timeout=None):
+            raise urllib.error.URLError('connection refused')
+        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen', fake_urlopen)
+        downloader.enqueue([{
+            'tweet_id': '4',
+            'url': 'https://pbs.twimg.com/media/x.jpg',
+            'rel_path': 'media/4/x.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(downloader)
+        # Neither final nor .part should remain.
+        media_dir = tmp_path / 'media' / '4'
+        if media_dir.exists():
+            assert list(media_dir.iterdir()) == []

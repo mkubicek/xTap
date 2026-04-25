@@ -16,6 +16,7 @@ let seenIds = new Set();
 let sessionCount = 0;
 let allTimeCount = 0;
 let outputDir = '';
+let imageDownload = false;
 let debugLogging = false;
 let verboseLogging = false;
 let logBuffer = [];
@@ -159,13 +160,14 @@ async function _saveStateImpl() {
 async function restoreState() {
   const [seenStored, stored] = await Promise.all([
     seenIdsStorage().get(['seenIds', 'tweetBuffer']),
-    chrome.storage.local.get(['allTimeCount', 'captureEnabled', 'outputDir', 'debugLogging', 'verboseLogging']),
+    chrome.storage.local.get(['allTimeCount', 'captureEnabled', 'outputDir', 'imageDownload', 'debugLogging', 'verboseLogging']),
   ]);
   if (seenStored.seenIds) seenIds = new Set(seenStored.seenIds.filter(Boolean));
   if (Array.isArray(seenStored.tweetBuffer)) buffer = seenStored.tweetBuffer;
   if (typeof stored.allTimeCount === 'number') allTimeCount = stored.allTimeCount;
   if (typeof stored.captureEnabled === 'boolean') captureEnabled = stored.captureEnabled;
   if (typeof stored.outputDir === 'string') outputDir = stored.outputDir;
+  if (typeof stored.imageDownload === 'boolean') imageDownload = stored.imageDownload;
   if (typeof stored.debugLogging === 'boolean') debugLogging = stored.debugLogging;
   if (typeof stored.verboseLogging === 'boolean') verboseLogging = stored.verboseLogging;
 }
@@ -341,6 +343,7 @@ async function sendToHost(msg) {
     path = '/tweets';
     body = { tweets: msg.tweets };
     if (msg.outputDir) body.outputDir = msg.outputDir;
+    if (msg.imageDownload) body.image_download = true;
   }
 
   try {
@@ -428,6 +431,7 @@ async function flush() {
     const batch = buffer.splice(0);
     const message = { tweets: batch };
     if (outputDir) message.outputDir = outputDir;
+    if (imageDownload) message.imageDownload = true;
 
     try {
       const resp = await sendToHost(message);
@@ -666,6 +670,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         connected: transport !== 'none',
         buffered: buffer.length,
         outputDir,
+        imageDownload,
         debugLogging,
         verboseLogging,
         transport,
@@ -719,6 +724,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       chrome.storage.local.set({ outputDir });
       sendResponse({ outputDir });
     }
+    return true;
+  }
+
+  if (msg.type === 'SET_IMAGE_DOWNLOAD') {
+    imageDownload = !!msg.imageDownload;
+    chrome.storage.local.set({ imageDownload });
+    sendResponse({ imageDownload });
     return true;
   }
 

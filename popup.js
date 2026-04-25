@@ -5,6 +5,7 @@ const alltimeEl = document.getElementById('alltime-count');
 const toggleBtn = document.getElementById('toggle');
 const outputDirInput = document.getElementById('output-dir');
 const saveDirBtn = document.getElementById('save-dir');
+const imageDownloadCheckbox = document.getElementById('image-download');
 const videoSection = document.getElementById('video-section');
 const videoLabel = document.getElementById('video-label');
 const ytdlpHint = document.getElementById('ytdlp-hint');
@@ -39,6 +40,8 @@ function render(state) {
     outputDirInput.value = state.outputDir;
   }
 
+  imageDownloadCheckbox.checked = !!state.imageDownload;
+
   currentTransport = state.transport;
 }
 
@@ -54,6 +57,13 @@ function refresh() {
 toggleBtn.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'TOGGLE_CAPTURE' }, (response) => {
     if (response) refresh();
+  });
+});
+
+imageDownloadCheckbox.addEventListener('change', () => {
+  chrome.runtime.sendMessage({
+    type: 'SET_IMAGE_DOWNLOAD',
+    imageDownload: imageDownloadCheckbox.checked,
   });
 });
 
