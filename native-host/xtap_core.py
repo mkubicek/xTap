@@ -360,12 +360,41 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
 # Strip a trailing :orig / :large / :medium etc. suffix Twitter appends to media URLs.
 _TWIMG_SIZE_SUFFIX_RE = re.compile(r':(orig|large|medium|small|thumb)$')
 
+# Twitter snowflake IDs are numeric; reject anything else to block path traversal.
+_TWEET_ID_RE = re.compile(r'^[0-9]+$')
+
+# Only fetch from these CDN hosts. Anything else (including redirects) is rejected.
+ALLOWED_IMAGE_HOSTS = frozenset({'pbs.twimg.com'})
+
+
+def _env_int(name, default):
+    """Parse an int env var, falling back to default on missing/empty/invalid."""
+    raw = (os.environ.get(name) or '').strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        print(f'[xtap:image] invalid {name}={raw!r}, using {default}', file=sys.stderr)
+        return default
+
+
+def _env_float(name, default):
+    raw = (os.environ.get(name) or '').strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        print(f'[xtap:image] invalid {name}={raw!r}, using {default}', file=sys.stderr)
+        return default
+
 
 def _photo_filename(url):
     """Extract the CDN filename from a pbs.twimg.com photo URL.
 
     Returns the basename without any trailing :size suffix, or None if the URL
-    has no usable filename.
+    has no usable filename or contains traversal components.
     """
     if not url:
         return None
@@ -374,24 +403,48 @@ def _photo_filename(url):
     name = os.path.basename(path)
     if not name or name in ('.', '..'):
         return None
-    # Drop any unexpected path separators just in case
-    return name.replace('/', '_').replace('\\', '_')
+    # Reject anything with path separators or that would still resolve to a
+    # parent directory after basename (defense in depth).
+    if '/' in name or '\\' in name or name.startswith('.'):
+        return None
+    return name
 
 
-def inject_image_local_paths(tweets):
+def _is_safe_rel_path(out_dir, rel_path):
+    """Verify joining rel_path with out_dir stays under out_dir.
+
+    Catches absolute paths (`/etc/...`), traversal (`../foo`), and Windows
+    drive-letter paths.
+    """
+    if not rel_path or os.path.isabs(rel_path):
+        return False
+    out_real = os.path.realpath(out_dir)
+    candidate = os.path.realpath(os.path.join(out_real, rel_path))
+    try:
+        return os.path.commonpath([out_real, candidate]) == out_real
+    except ValueError:
+        # Different drives on Windows.
+        return False
+
+
+def inject_image_local_paths(tweets, out_dir):
     """Add `local_path` to each photo media item and return a list of pending downloads.
 
     Mutates tweets in place: every photo media item with a usable URL gets
     `local_path = "media/<tweet_id>/<cdn_filename>"`. Article media items
     (under `tweet.article.media[]`) already have `local_path` set by the JS
-    parser, so they are not mutated — just collected for download.
+    parser; this function validates them but does not overwrite them.
+
+    Path components are validated against `out_dir`: tweet IDs must match
+    [0-9]+, filenames must be plain basenames, and the final resolved path
+    must stay under `out_dir`. Anything that fails validation is skipped.
 
     Returns: list of {tweet_id, url, rel_path} for the caller to enqueue.
     """
     pending = []
     for tweet in tweets:
         tweet_id = tweet.get('id')
-        if not tweet_id:
+        if not tweet_id or not isinstance(tweet_id, str) or not _TWEET_ID_RE.match(tweet_id):
             continue
 
         # Top-level photo media (regular tweets).
@@ -403,17 +456,25 @@ def inject_image_local_paths(tweets):
             if not filename:
                 continue
             rel_path = f'media/{tweet_id}/{filename}'
+            if not _is_safe_rel_path(out_dir, rel_path):
+                continue
             item['local_path'] = rel_path
             pending.append({'tweet_id': tweet_id, 'url': url, 'rel_path': rel_path})
 
-        # Article media (long-form posts) — local_path already set by parser.
+        # Article media (long-form posts) — local_path is set by the JS parser
+        # but we MUST re-validate it here: it crosses the trust boundary in
+        # the request body, so a crafted local_path could escape out_dir.
         article = tweet.get('article') or {}
         for item in article.get('media') or []:
             if not isinstance(item, dict):
                 continue
             url = item.get('url')
             rel_path = item.get('local_path')
-            if not url or not rel_path:
+            if not url or not isinstance(rel_path, str):
+                continue
+            if not _is_safe_rel_path(out_dir, rel_path):
+                # Strip the unsafe path so it doesn't end up in the JSONL.
+                item.pop('local_path', None)
                 continue
             pending.append({'tweet_id': tweet_id, 'url': url, 'rel_path': rel_path})
 
@@ -433,29 +494,52 @@ def get_image_downloader():
         return _image_downloader
 
 
+def reset_image_downloader():
+    """Reset the singleton (test-only — leaks the previous worker thread)."""
+    global _image_downloader
+    with _image_downloader_lock:
+        _image_downloader = None
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Treat any redirect as an error so we never fetch beyond the allowlisted host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, f'redirect to {newurl} blocked', headers, fp)
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+
+
 class ImageDownloader:
-    """Single background-thread image downloader with simple rate limiting.
+    """Single background-thread image downloader with hardened HTTP fetch.
 
     - One worker, one queue. Per-job cost is small so a single thread is fine
       and avoids hammering the CDN.
     - Idempotent: if the destination file already exists, skip the network call
       and log status='exists'.
-    - Optional total-bytes quota via XTAP_MAX_MEDIA_MB. When exceeded, new jobs
-      log status='skipped:quota' instead of downloading.
-    - 429 responses trigger exponential backoff (capped). Other HTTP errors
-      and network failures log status='error'.
+    - URL hostname is checked against ALLOWED_IMAGE_HOSTS before every request.
+      Redirects are blocked entirely (so an attacker can't 302 us off-allowlist).
+    - Per-file size cap (XTAP_MAX_FILE_MB, default 50) bounds disk impact even
+      for adversarial responses. Optional cumulative cap via XTAP_MAX_MEDIA_MB.
+    - 429 responses trigger exponential backoff (capped at MAX_BACKOFF_S).
+      Other HTTP errors and network failures log status='error'.
     """
 
     DEFAULT_DELAY_MS = 100
+    DEFAULT_MAX_FILE_MB = 50
     USER_AGENT = 'xTap/1.0 (+https://github.com/mkubicek/xTap)'
     MAX_BACKOFF_S = 30
     REQUEST_TIMEOUT_S = 30
+    CHUNK_SIZE = 64 * 1024
 
     def __init__(self):
         self.queue = queue.Queue()
-        self.delay_s = max(0.0, int(os.environ.get('XTAP_IMAGE_DELAY_MS', self.DEFAULT_DELAY_MS)) / 1000.0)
-        max_mb = os.environ.get('XTAP_MAX_MEDIA_MB', '').strip()
-        self.max_bytes = int(float(max_mb) * 1024 * 1024) if max_mb else None
+        self.delay_s = max(0.0, _env_int('XTAP_IMAGE_DELAY_MS', self.DEFAULT_DELAY_MS) / 1000.0)
+        max_total_mb = _env_float('XTAP_MAX_MEDIA_MB', 0.0)
+        self.max_bytes = int(max_total_mb * 1024 * 1024) if max_total_mb > 0 else None
+        max_file_mb = _env_float('XTAP_MAX_FILE_MB', float(self.DEFAULT_MAX_FILE_MB))
+        self.max_file_bytes = int(max_file_mb * 1024 * 1024) if max_file_mb > 0 else None
         self._bytes_lock = threading.Lock()
         self.bytes_downloaded = 0
         self._last_request_at = 0.0
@@ -484,10 +568,21 @@ class ImageDownloader:
         tweet_id = job['tweet_id']
         url = job['url']
         rel_path = job['rel_path']
+
+        # Re-validate the rel_path defensively: enqueue() is exported and a
+        # future caller could skip inject_image_local_paths.
+        if not _is_safe_rel_path(out_dir, rel_path):
+            self._log(out_dir, tweet_id, url, rel_path, 'error:unsafe_path', 0)
+            return
+
         dest_path = os.path.join(out_dir, rel_path)
 
         if os.path.exists(dest_path):
             self._log(out_dir, tweet_id, url, dest_path, 'exists', os.path.getsize(dest_path))
+            return
+
+        if not _is_allowed_url(url):
+            self._log(out_dir, tweet_id, url, dest_path, 'error:host_not_allowed', 0)
             return
 
         if self.max_bytes is not None:
@@ -524,9 +619,23 @@ class ImageDownloader:
             attempts += 1
             req = urllib.request.Request(url, headers={'User-Agent': self.USER_AGENT})
             try:
-                with urllib.request.urlopen(req, timeout=self.REQUEST_TIMEOUT_S) as resp:
+                with _NO_REDIRECT_OPENER.open(req, timeout=self.REQUEST_TIMEOUT_S) as resp:
+                    # Reject up-front when Content-Length advertises an oversize body.
+                    if self.max_file_bytes is not None:
+                        cl = resp.headers.get('Content-Length')
+                        if cl and cl.isdigit() and int(cl) > self.max_file_bytes:
+                            return 0, 'too_large'
+                    written = 0
                     with open(tmp_path, 'wb') as f:
-                        shutil.copyfileobj(resp, f)
+                        while True:
+                            chunk = resp.read(self.CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            written += len(chunk)
+                            if self.max_file_bytes is not None and written > self.max_file_bytes:
+                                _safe_unlink(tmp_path)
+                                return 0, 'too_large'
+                            f.write(chunk)
                 size = os.path.getsize(tmp_path)
                 os.replace(tmp_path, dest_path)
                 return size, None
@@ -542,11 +651,15 @@ class ImageDownloader:
                 return 0, type(e).__name__
 
     def _log(self, out_dir, tweet_id, url, dest_path, status, size):
+        try:
+            local_path = os.path.relpath(dest_path, out_dir)
+        except ValueError:
+            local_path = dest_path
         entry = {
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'tweet_id': tweet_id,
             'url': url,
-            'local_path': os.path.relpath(dest_path, out_dir) if dest_path.startswith(out_dir) else dest_path,
+            'local_path': local_path,
             'status': status,
             'bytes': size,
         }
@@ -557,6 +670,20 @@ class ImageDownloader:
                 f.write(json.dumps(entry, ensure_ascii=False) + '\n')
         except OSError as e:
             print(f'[xtap:image] manifest write failed: {e}', file=sys.stderr)
+
+
+def _is_allowed_url(url):
+    """True iff url is https and the hostname is in ALLOWED_IMAGE_HOSTS."""
+    if not url or not isinstance(url, str):
+        return False
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme != 'https':
+        return False
+    host = (parsed.hostname or '').lower()
+    return host in ALLOWED_IMAGE_HOSTS
 
 
 def _safe_unlink(path):

@@ -607,14 +607,14 @@ class TestPhotoFilename:
 
 
 class TestInjectImageLocalPaths:
-    def test_adds_local_path_to_photos(self):
+    def test_adds_local_path_to_photos(self, tmp_path):
         tweets = [{
             'id': '123',
             'media': [
                 {'type': 'photo', 'url': 'https://pbs.twimg.com/media/abc.jpg:orig'},
             ],
         }]
-        pending = xtap_core.inject_image_local_paths(tweets)
+        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
         assert tweets[0]['media'][0]['local_path'] == 'media/123/abc.jpg'
         assert pending == [{
             'tweet_id': '123',
@@ -622,27 +622,27 @@ class TestInjectImageLocalPaths:
             'rel_path': 'media/123/abc.jpg',
         }]
 
-    def test_skips_video_media(self):
+    def test_skips_video_media(self, tmp_path):
         tweets = [{
             'id': '123',
             'media': [
                 {'type': 'video', 'url': 'https://video.twimg.com/foo.mp4'},
             ],
         }]
-        pending = xtap_core.inject_image_local_paths(tweets)
+        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
         assert pending == []
         assert 'local_path' not in tweets[0]['media'][0]
 
-    def test_skips_tweet_without_id(self):
+    def test_skips_tweet_without_id(self, tmp_path):
         tweets = [{'media': [{'type': 'photo', 'url': 'https://pbs.twimg.com/media/x.jpg'}]}]
-        pending = xtap_core.inject_image_local_paths(tweets)
+        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
         assert pending == []
 
-    def test_handles_missing_media(self):
+    def test_handles_missing_media(self, tmp_path):
         tweets = [{'id': '123'}, {'id': '456', 'media': []}]
-        assert xtap_core.inject_image_local_paths(tweets) == []
+        assert xtap_core.inject_image_local_paths(tweets, str(tmp_path)) == []
 
-    def test_enqueues_article_media(self):
+    def test_enqueues_article_media(self, tmp_path):
         tweets = [{
             'id': '999',
             'media': [],
@@ -660,24 +660,125 @@ class TestInjectImageLocalPaths:
                 ],
             },
         }]
-        pending = xtap_core.inject_image_local_paths(tweets)
+        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
         assert [p['rel_path'] for p in pending] == [
             'media/999/HGxr957a0AAzHOk.jpg',
             'media/999/HGxr2u5a8AANAOy.jpg',
         ]
 
-    def test_skips_article_media_without_local_path(self):
+    def test_skips_article_media_without_local_path(self, tmp_path):
         tweets = [{
             'id': '999',
             'article': {'media': [{'url': 'https://pbs.twimg.com/media/x.jpg'}]},
         }]
-        assert xtap_core.inject_image_local_paths(tweets) == []
+        assert xtap_core.inject_image_local_paths(tweets, str(tmp_path)) == []
 
-    def test_skips_photo_without_url(self):
+    def test_skips_photo_without_url(self, tmp_path):
         tweets = [{'id': '123', 'media': [{'type': 'photo', 'url': None}]}]
-        pending = xtap_core.inject_image_local_paths(tweets)
+        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
         assert pending == []
         assert 'local_path' not in tweets[0]['media'][0]
+
+    def test_rejects_non_numeric_tweet_id(self, tmp_path):
+        tweets = [{
+            'id': '../../etc',
+            'media': [{'type': 'photo', 'url': 'https://pbs.twimg.com/media/x.jpg'}],
+        }]
+        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        assert pending == []
+        assert 'local_path' not in tweets[0]['media'][0]
+
+    def test_rejects_article_local_path_with_traversal(self, tmp_path):
+        tweets = [{
+            'id': '999',
+            'article': {'media': [{
+                'url': 'https://pbs.twimg.com/media/x.jpg',
+                'local_path': '../../../../etc/passwd',
+            }]},
+        }]
+        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        assert pending == []
+        # Unsafe local_path is stripped so the JSONL doesn't carry it.
+        assert 'local_path' not in tweets[0]['article']['media'][0]
+
+    def test_rejects_article_local_path_absolute(self, tmp_path):
+        tweets = [{
+            'id': '999',
+            'article': {'media': [{
+                'url': 'https://pbs.twimg.com/media/x.jpg',
+                'local_path': '/etc/passwd',
+            }]},
+        }]
+        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        assert pending == []
+        assert 'local_path' not in tweets[0]['article']['media'][0]
+
+    def test_rejects_photo_filename_with_traversal_basename(self, tmp_path):
+        # Forged URL whose basename is ".."
+        tweets = [{
+            'id': '123',
+            'media': [{'type': 'photo', 'url': 'https://pbs.twimg.com/media/..'}],
+        }]
+        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        assert pending == []
+        assert 'local_path' not in tweets[0]['media'][0]
+
+
+class TestPhotoFilenameHardening:
+    def test_basename_strip_traversal(self):
+        # urlparse + basename collapses path segments, but our explicit
+        # regex/blocklist must still reject these for defense in depth.
+        assert xtap_core._photo_filename('https://pbs.twimg.com/media/..') is None
+        assert xtap_core._photo_filename('https://pbs.twimg.com/media/.') is None
+        assert xtap_core._photo_filename('https://pbs.twimg.com/.hidden.jpg') is None
+
+    def test_safe_rel_path_blocks_absolute(self, tmp_path):
+        assert xtap_core._is_safe_rel_path(str(tmp_path), '/etc/passwd') is False
+
+    def test_safe_rel_path_blocks_traversal(self, tmp_path):
+        assert xtap_core._is_safe_rel_path(str(tmp_path), '../../etc/passwd') is False
+
+    def test_safe_rel_path_allows_normal(self, tmp_path):
+        assert xtap_core._is_safe_rel_path(str(tmp_path), 'media/123/abc.jpg') is True
+
+
+class TestUrlAllowlist:
+    def test_allows_pbs_twimg(self):
+        assert xtap_core._is_allowed_url('https://pbs.twimg.com/media/x.jpg') is True
+
+    def test_blocks_other_host(self):
+        assert xtap_core._is_allowed_url('https://evil.example.com/x.jpg') is False
+
+    def test_blocks_http_scheme(self):
+        assert xtap_core._is_allowed_url('http://pbs.twimg.com/media/x.jpg') is False
+
+    def test_blocks_file_scheme(self):
+        assert xtap_core._is_allowed_url('file:///etc/passwd') is False
+
+    def test_blocks_metadata_ip(self):
+        assert xtap_core._is_allowed_url('http://169.254.169.254/latest/meta-data/') is False
+
+    def test_blocks_none_or_empty(self):
+        assert xtap_core._is_allowed_url(None) is False
+        assert xtap_core._is_allowed_url('') is False
+
+
+class TestEnvParsing:
+    def test_env_int_falls_back_on_garbage(self, monkeypatch):
+        monkeypatch.setenv('XTAP_IMAGE_DELAY_MS', 'foo')
+        assert xtap_core._env_int('XTAP_IMAGE_DELAY_MS', 100) == 100
+
+    def test_env_int_uses_value_when_valid(self, monkeypatch):
+        monkeypatch.setenv('XTAP_IMAGE_DELAY_MS', '250')
+        assert xtap_core._env_int('XTAP_IMAGE_DELAY_MS', 100) == 250
+
+    def test_env_int_falls_back_on_empty(self, monkeypatch):
+        monkeypatch.setenv('XTAP_IMAGE_DELAY_MS', '')
+        assert xtap_core._env_int('XTAP_IMAGE_DELAY_MS', 100) == 100
+
+    def test_env_float_falls_back_on_garbage(self, monkeypatch):
+        monkeypatch.setenv('XTAP_MAX_FILE_MB', 'big')
+        assert xtap_core._env_float('XTAP_MAX_FILE_MB', 50.0) == 50.0
 
 
 # ---------------------------------------------------------------------------
@@ -686,9 +787,12 @@ class TestInjectImageLocalPaths:
 
 
 class _FakeResponse:
-    def __init__(self, body):
+    def __init__(self, body, content_length=None):
         import io
         self._buf = io.BytesIO(body)
+        self.headers = {}
+        if content_length is not None:
+            self.headers['Content-Length'] = str(content_length)
 
     def read(self, n=-1):
         return self._buf.read(n)
@@ -709,11 +813,21 @@ def _wait_for_queue(downloader, timeout=5):
         __import__('time').sleep(0.02)
 
 
+def _patch_opener(monkeypatch, fake_open):
+    """Replace the download opener with a fake. fake_open(req, timeout=) -> response."""
+    class _FakeOpener:
+        def open(self, req, timeout=None):
+            return fake_open(req, timeout=timeout)
+    monkeypatch.setattr(xtap_core, '_NO_REDIRECT_OPENER', _FakeOpener())
+
+
 @pytest.fixture
 def downloader(monkeypatch):
-    """A fresh ImageDownloader with no rate-limit delay."""
+    """A fresh ImageDownloader with no rate-limit delay and no singleton state."""
     monkeypatch.setenv('XTAP_IMAGE_DELAY_MS', '0')
     monkeypatch.delenv('XTAP_MAX_MEDIA_MB', raising=False)
+    monkeypatch.delenv('XTAP_MAX_FILE_MB', raising=False)
+    xtap_core.reset_image_downloader()
     return xtap_core.ImageDownloader()
 
 
@@ -722,11 +836,11 @@ class TestImageDownloader:
         body = b'\x89PNG\r\n' + b'x' * 100
         opens = []
 
-        def fake_urlopen(req, timeout=None):
+        def fake_open(req, timeout=None):
             opens.append(req.full_url)
             return _FakeResponse(body)
 
-        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen', fake_urlopen)
+        _patch_opener(monkeypatch, fake_open)
         downloader.enqueue([{
             'tweet_id': '1',
             'url': 'https://pbs.twimg.com/media/abc.jpg:orig',
@@ -736,7 +850,6 @@ class TestImageDownloader:
         dest = tmp_path / 'media' / '1' / 'abc.jpg'
         assert dest.read_bytes() == body
         assert opens == ['https://pbs.twimg.com/media/abc.jpg:orig']
-        # Manifest written
         entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
         assert entries[0]['status'] == 'ok'
         assert entries[0]['bytes'] == len(body)
@@ -748,11 +861,11 @@ class TestImageDownloader:
         (dest_dir / 'abc.jpg').write_bytes(b'cached-bytes')
 
         called = []
-        def fake_urlopen(req, timeout=None):
+        def fake_open(req, timeout=None):
             called.append(req.full_url)
             return _FakeResponse(b'should-not-run')
 
-        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen', fake_urlopen)
+        _patch_opener(monkeypatch, fake_open)
         downloader.enqueue([{
             'tweet_id': '1',
             'url': 'https://pbs.twimg.com/media/abc.jpg:orig',
@@ -766,9 +879,9 @@ class TestImageDownloader:
 
     def test_404_logs_error(self, downloader, tmp_path, monkeypatch):
         import urllib.error
-        def fake_urlopen(req, timeout=None):
+        def fake_open(req, timeout=None):
             raise urllib.error.HTTPError(req.full_url, 404, 'Not Found', {}, None)
-        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen', fake_urlopen)
+        _patch_opener(monkeypatch, fake_open)
         downloader.enqueue([{
             'tweet_id': '2',
             'url': 'https://pbs.twimg.com/media/missing.jpg:orig',
@@ -779,36 +892,128 @@ class TestImageDownloader:
         entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
         assert entries[0]['status'] == 'error:http_404'
 
-    def test_quota_skips(self, tmp_path, monkeypatch):
-        # 0 MB quota — every job should be skipped.
-        monkeypatch.setenv('XTAP_IMAGE_DELAY_MS', '0')
-        monkeypatch.setenv('XTAP_MAX_MEDIA_MB', '0')
-        dl = xtap_core.ImageDownloader()
+    def test_quota_skips(self, downloader, tmp_path, monkeypatch):
+        # Pre-set bytes_downloaded above the cap so the next job hits 'skipped:quota'.
+        downloader.max_bytes = 100
+        downloader.bytes_downloaded = 200
         called = []
-        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen',
-                            lambda *a, **kw: called.append(1) or _FakeResponse(b''))
-        dl.enqueue([{
+        _patch_opener(monkeypatch, lambda *a, **kw: called.append(1) or _FakeResponse(b''))
+        downloader.enqueue([{
             'tweet_id': '3',
             'url': 'https://pbs.twimg.com/media/q.jpg',
             'rel_path': 'media/3/q.jpg',
         }], str(tmp_path))
-        _wait_for_queue(dl)
+        _wait_for_queue(downloader)
         assert called == []
         entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
         assert entries[0]['status'] == 'skipped:quota'
 
     def test_atomic_partial_cleanup_on_error(self, downloader, tmp_path, monkeypatch):
         import urllib.error
-        def fake_urlopen(req, timeout=None):
+        def fake_open(req, timeout=None):
             raise urllib.error.URLError('connection refused')
-        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen', fake_urlopen)
+        _patch_opener(monkeypatch, fake_open)
         downloader.enqueue([{
             'tweet_id': '4',
             'url': 'https://pbs.twimg.com/media/x.jpg',
             'rel_path': 'media/4/x.jpg',
         }], str(tmp_path))
         _wait_for_queue(downloader)
-        # Neither final nor .part should remain.
         media_dir = tmp_path / 'media' / '4'
         if media_dir.exists():
             assert list(media_dir.iterdir()) == []
+
+    def test_blocks_non_allowlisted_host(self, downloader, tmp_path, monkeypatch):
+        called = []
+        _patch_opener(monkeypatch, lambda *a, **kw: called.append(1) or _FakeResponse(b''))
+        downloader.enqueue([{
+            'tweet_id': '5',
+            'url': 'https://evil.example.com/x.jpg',
+            'rel_path': 'media/5/x.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(downloader)
+        assert called == []
+        entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
+        assert entries[0]['status'] == 'error:host_not_allowed'
+
+    def test_blocks_metadata_ip(self, downloader, tmp_path, monkeypatch):
+        called = []
+        _patch_opener(monkeypatch, lambda *a, **kw: called.append(1) or _FakeResponse(b''))
+        downloader.enqueue([{
+            'tweet_id': '6',
+            'url': 'http://169.254.169.254/latest/meta-data/',
+            'rel_path': 'media/6/meta',
+        }], str(tmp_path))
+        _wait_for_queue(downloader)
+        assert called == []
+        entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
+        assert entries[0]['status'] == 'error:host_not_allowed'
+
+    def test_rejects_unsafe_rel_path_at_worker(self, downloader, tmp_path, monkeypatch):
+        called = []
+        _patch_opener(monkeypatch, lambda *a, **kw: called.append(1) or _FakeResponse(b''))
+        # Even if a future caller skips inject_image_local_paths, the worker
+        # rejects an unsafe rel_path before any FS or network work.
+        downloader.enqueue([{
+            'tweet_id': '7',
+            'url': 'https://pbs.twimg.com/media/x.jpg',
+            'rel_path': '../../etc/passwd',
+        }], str(tmp_path))
+        _wait_for_queue(downloader)
+        assert called == []
+        entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
+        assert entries[0]['status'] == 'error:unsafe_path'
+        # Nothing was created outside out_dir.
+        assert not (tmp_path / '..' / 'etc').exists()
+
+    def test_aborts_oversize_response(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('XTAP_IMAGE_DELAY_MS', '0')
+        monkeypatch.setenv('XTAP_MAX_FILE_MB', '0.0001')  # ~104 bytes
+        xtap_core.reset_image_downloader()
+        dl = xtap_core.ImageDownloader()
+        big = b'x' * 5000
+        _patch_opener(monkeypatch, lambda *a, **kw: _FakeResponse(big))
+        dl.enqueue([{
+            'tweet_id': '8',
+            'url': 'https://pbs.twimg.com/media/big.jpg',
+            'rel_path': 'media/8/big.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(dl)
+        assert not (tmp_path / 'media' / '8' / 'big.jpg').exists()
+        assert not (tmp_path / 'media' / '8' / 'big.jpg.part').exists()
+        entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
+        assert entries[0]['status'] == 'error:too_large'
+
+    def test_rejects_oversize_via_content_length(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('XTAP_IMAGE_DELAY_MS', '0')
+        monkeypatch.setenv('XTAP_MAX_FILE_MB', '0.0001')
+        xtap_core.reset_image_downloader()
+        dl = xtap_core.ImageDownloader()
+        # Server claims a huge body up-front — we reject without reading it.
+        _patch_opener(monkeypatch, lambda *a, **kw: _FakeResponse(b'', content_length=10_000_000))
+        dl.enqueue([{
+            'tweet_id': '9',
+            'url': 'https://pbs.twimg.com/media/huge.jpg',
+            'rel_path': 'media/9/huge.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(dl)
+        entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
+        assert entries[0]['status'] == 'error:too_large'
+
+    def test_redirect_handler_raises_for_redirect(self, monkeypatch):
+        """The custom HTTPRedirectHandler must turn redirects into errors."""
+        import urllib.error
+        h = xtap_core._NoRedirectHandler()
+        # Build a fake request and assert HTTPError is raised on redirect attempt.
+        req = urllib.request.Request('https://pbs.twimg.com/media/x.jpg')
+        with pytest.raises(urllib.error.HTTPError):
+            h.redirect_request(req, None, 302, 'Found', {}, 'https://evil.example.com/x.jpg')
+
+
+class TestImageDownloaderSingleton:
+    def test_get_returns_same_instance(self, monkeypatch):
+        xtap_core.reset_image_downloader()
+        a = xtap_core.get_image_downloader()
+        b = xtap_core.get_image_downloader()
+        assert a is b
+        xtap_core.reset_image_downloader()

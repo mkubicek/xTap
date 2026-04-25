@@ -151,17 +151,18 @@ class DaemonHandler(BaseHTTPRequestHandler):
     def _handle_tweets(self, body):
         try:
             msg_dir = body.get('outputDir', '').strip()
-            image_download = bool(body.get('image_download'))
+            # Strict boolean: only `true` enables. Avoids string 'false' / number 1
+            # silently turning the feature on.
+            image_download = body.get('image_download') is True
             with _state_lock:
                 out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
                 tweets = body.get('tweets', [])
-                # Compute local_path for photo media before write so the JSONL
-                # records the planned on-disk location regardless of whether
-                # the user has image download enabled this session.
-                pending_images = inject_image_local_paths(tweets)
+                # Only stamp local_path onto media when we'll actually fetch
+                # the file. Keeps the JSONL clean for users who don't opt in.
+                pending_images = inject_image_local_paths(tweets, out_dir) if image_download else []
                 count, dupes = write_tweets(tweets, out_dir, _seen_ids)
             queued = 0
-            if image_download and pending_images:
+            if pending_images:
                 get_image_downloader().enqueue(pending_images, out_dir)
                 queued = len(pending_images)
             log_debug(f'  Tweets: {count} written, {dupes} dupes, {queued} images queued -> {out_dir}')

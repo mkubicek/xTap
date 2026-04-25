@@ -265,7 +265,9 @@ class TestAuthorizedRequest:
             shutil.rmtree(out_dir, ignore_errors=True)
 
     def test_tweets_no_flag_does_not_enqueue(self, daemon_url, monkeypatch):
-        """Without image_download flag, the downloader is not invoked."""
+        """Without image_download flag, the downloader is not invoked and
+        local_path is NOT injected (keeps JSONL clean for users who don't
+        opt in, and matches the golden-fixture E2E test expectations)."""
         import shutil
         import tempfile
 
@@ -285,11 +287,36 @@ class TestAuthorizedRequest:
             assert status == 200
             assert body['images_queued'] == 0
             assert called == []
-            # local_path was still injected on the tweet (written to JSONL).
             files = [p for p in os.listdir(out_dir) if p.startswith('tweets-')]
             assert len(files) == 1
             line = open(os.path.join(out_dir, files[0])).readline()
-            assert '"local_path": "media/43/HGK.jpg"' in line
+            # local_path NOT present when image_download is off.
+            assert 'local_path' not in line
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+
+    def test_tweets_string_truthy_does_not_enable(self, daemon_url, monkeypatch):
+        """image_download must be the literal True — string 'false' or 1 must NOT enable."""
+        import shutil
+        import tempfile
+
+        out_dir = tempfile.mkdtemp(dir=os.path.expanduser('~'), prefix='.xtap-test-')
+        called = []
+        monkeypatch.setattr(xtap_daemon, 'get_image_downloader', lambda: called.append(1))
+        try:
+            tweet = {
+                'id': '44',
+                'media': [{'type': 'photo', 'url': 'https://pbs.twimg.com/media/x.jpg'}],
+            }
+            for bad in ['false', 1, 'true', [1]]:
+                status, body = _post(
+                    daemon_url, '/tweets',
+                    body={'outputDir': out_dir, 'tweets': [tweet], 'image_download': bad},
+                    token=TEST_TOKEN,
+                )
+                assert status == 200
+                assert body['images_queued'] == 0, f'truthy {bad!r} should not enable'
+            assert called == []
         finally:
             shutil.rmtree(out_dir, ignore_errors=True)
 
