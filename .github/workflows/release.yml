@@ -39,10 +39,20 @@ jobs:
             native-host/xtap_host.bat \
             native-host/xtap_daemon.bat
 
-      - name: Upload zip to release
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          gh release upload "$GITHUB_REF_NAME" \
-            "xtap-${VERSION}.zip#xTap ${VERSION} (extension + native host)"
+          ASSET="xtap-${VERSION}.zip#xTap ${VERSION} (extension + native host)"
+          # Create the release if it doesn't exist yet (auto-generated notes
+          # from commits since the previous tag), otherwise just upload the
+          # zip into the release that was pre-created with hand-written notes.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes \
+              "$ASSET"
+          fi
