@@ -203,8 +203,62 @@ X sometimes returns `TimelineTweet` entries where `tweet_results.result` is miss
 - **Service worker module:** `background.js` is loaded as an ES module (`"type": "module"` in manifest). It imports `tweet-parser.js` directly.
 - **HTTP daemon:** `xtap_daemon.py` binds `127.0.0.1:17381`. Auth token stored at `~/.xtap/secret` (mode 600). Managed by launchd (macOS: `launchctl kickstart -k gui/$(id -u)/com.xtap.daemon`), systemd (Linux: `systemctl --user restart com.xtap.daemon`), or Scheduled Task (Windows: `Stop-ScheduledTask -TaskName xTapDaemon; Start-ScheduledTask -TaskName xTapDaemon`). Logs: macOS/Windows at `~/.xtap/daemon-stderr.log`, Linux via `journalctl --user -u com.xtap.daemon`.
 - **Transport debugging:** The popup shows connection status and auto-refreshes every 2s. When transport is unavailable, the popup and debug dashboard show an actionable error message. Service worker console logs transport selection at startup and reprobe attempts. Daemon startup diagnostics are always logged to `~/.xtap/daemon-stderr.log`; set `XTAP_LOG_LEVEL=debug` for request-level detail.
-- **Release checklist:** (1) Bump `manifest.json` version, (2) bump `native-host/xtap_daemon.py` `VERSION`, (3) run `node scripts/build-firefox-manifest.js` to regenerate `manifest.firefox.json`. The manifest test validates version parity, so CI will catch a forgotten regeneration. (4) If any new files were added to the extension or native-host, **update the file list in `.github/workflows/release.yml`** — the release zip uses an explicit list, not a glob, so new files will be silently missing from releases if not added.
+- **Release checklist:** (1) Bump `manifest.json` version, (2) bump `native-host/xtap_daemon.py` `VERSION`, (3) run `node scripts/build-firefox-manifest.js` to regenerate `manifest.firefox.json`. The manifest test validates version parity, so CI will catch a forgotten regeneration. (4) If any new files were added to the extension or native-host, **update the file list in `.github/workflows/release.yml`** — the release zip uses an explicit list, not a glob, so new files will be silently missing from releases if not added. (5) Follow the **Release procedure** below to publish.
 - **Firefox manifest:** `manifest.firefox.json` is generated from `manifest.json` — never edit it directly. The generator script (`scripts/build-firefox-manifest.js`) swaps `service_worker` → `scripts` and adds Gecko metadata.
+
+## Release Procedure
+
+Every release follows the same flow so notes stay consistent across tags. Notes
+are always hand-written from the squashed PR body + the diff — never let the
+workflow auto-generate them.
+
+1. After the version-bump PR merges, pull main: `git checkout main && git pull --ff-only`.
+2. Draft notes locally using the template below. Save to `/tmp/release-notes-vX.Y.Z.md`.
+3. Pre-create the GitHub release as a draft with those notes:
+   `gh release create vX.Y.Z --draft --title vX.Y.Z --notes-file /tmp/release-notes-vX.Y.Z.md`
+4. Push the tag: `git push origin vX.Y.Z`.
+5. The Release workflow detects the existing draft and uploads `xtap-X.Y.Z.zip` into it (no notes overwritten).
+6. Verify the release page: zip attached, notes render correctly. Click **Publish release** when ready.
+7. Delete the local notes file and any merged feature branches.
+
+If the workflow ever runs against a tag with no pre-existing release, it falls
+back to `gh release create --generate-notes`. That fallback is a safety net,
+not the intended path. Always pre-create.
+
+### Release Notes Template
+
+Required sections (always present, in this order):
+
+```markdown
+## Highlights
+
+<1–3 bullets in plain English. What changed for users. Concrete, no hype.>
+
+## Upgrading
+
+<One line. Either: "No installer re-run needed — `git pull`, restart daemon,
+reload extension." Or: "Re-run `install.sh` (or `install.ps1`) because <reason>.">
+```
+
+Optional sections (include ONLY when content exists; never ship an empty header):
+
+- `## What's new` — feature details, link to the PR (#NN).
+- `## Fixes` — user-visible bug fixes, one bullet each, link to PRs.
+- `## Hardening` — security-relevant changes (path validation, allowlists, size caps, etc.).
+- `## Tuning` — new env vars / config knobs, with defaults.
+- `## Stats` — test count, coverage, e2e scenarios. Trust signal — keep it factual.
+
+Voice rules (same as the rest of the project):
+
+- Concrete, specific, terse. Name files, env vars, PR numbers.
+- No AI vocabulary (no "comprehensive", "robust", "nuanced", etc.) and no marketing copy.
+- Reference issues and PRs by number so users can dig in.
+- If a section would only have a single trivial bullet, fold it into Highlights instead of giving it its own header.
+- Imperative, active voice in bullets. "Block redirects" beats "Redirects are now blocked."
+
+When working with the user during a release, the assistant drafts the notes,
+shows them in chat for approval, then runs the `gh release create --draft`
+command. The user reviews on GitHub and clicks Publish.
 
 ## Contributing
 
