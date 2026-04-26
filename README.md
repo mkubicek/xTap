@@ -34,6 +34,7 @@ xTap is a browser extension (Chrome + Firefox) that silently intercepts the Grap
 - **Structured output** — each tweet saved as a clean JSON object with author, metrics, media, and more
 - **Article support** — long-form X articles are captured with full text, inline image references, and Draft.js block structure
 - **Video download** — download videos from tweets using yt-dlp (or direct MP4 fallback) via the extension popup. Requires the HTTP daemon. **Note:** unlike passive capture, video downloads make additional network requests to X and are not stealth.
+- **Image download** — opt-in toggle in the popup ("Download images automatically") fetches photos from `pbs.twimg.com` to `<output_dir>/media/<tweet_id>/<filename>` as you browse. Daemon-side; rate-limited; logs to `media-manifest.jsonl`. **Note:** also not stealth — adds requests to the Twitter CDN.
 - **Pause / resume** — click the extension icon to toggle capture on the fly
 - **Live counter** — badge on the extension icon shows tweets captured this session
 - **Multi-tab aware** — multiple X tabs feed into the same service worker with shared deduplication
@@ -331,6 +332,16 @@ Output is written to daily files (`tweets-YYYY-MM-DD.jsonl`). Each line is a sel
 ```
 
 For regular tweets, `is_article` and `article` are absent. For articles, `text` contains a markdown-style rendering of the article with inline image references pointing to `media/<tweet_id>/`.
+
+### Media file convention
+
+When the "Download images automatically" toggle is on, the daemon writes photos to:
+
+```
+<output_dir>/media/<tweet_id>/<basename(media.url)>
+```
+
+Top-level photo `media[]` entries do **not** carry a `local_path` field — the path is derived by convention so consumers can reconstruct it directly from `tweet.id` + the URL basename. Article media (`tweet.article.media[]`) does include `local_path` because that path is also embedded in the rendered article markdown (`![](media/<id>/file.png)`) so the article body works as a self-contained document. Download status (success / 404 / quota / oversize / blocked) is appended to `<output_dir>/media-manifest.jsonl`.
 
 ## Project Structure
 

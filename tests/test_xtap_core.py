@@ -578,7 +578,7 @@ class TestYtdlpProgressMerger:
 
 
 # ---------------------------------------------------------------------------
-# _photo_filename / inject_image_local_paths
+# _photo_filename / collect_image_jobs
 # ---------------------------------------------------------------------------
 
 
@@ -606,16 +606,18 @@ class TestPhotoFilename:
         assert xtap_core._photo_filename('https://pbs.twimg.com/') is None
 
 
-class TestInjectImageLocalPaths:
-    def test_adds_local_path_to_photos(self, tmp_path):
+class TestCollectImageJobs:
+    def test_returns_jobs_for_photos_without_mutating_jsonl(self, tmp_path):
         tweets = [{
             'id': '123',
             'media': [
                 {'type': 'photo', 'url': 'https://pbs.twimg.com/media/abc.jpg:orig'},
             ],
         }]
-        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
-        assert tweets[0]['media'][0]['local_path'] == 'media/123/abc.jpg'
+        pending = xtap_core.collect_image_jobs(tweets, str(tmp_path))
+        # Top-level photo media is NOT mutated — the path is convention-derived
+        # and consumers can reconstruct it from id + basename(url).
+        assert 'local_path' not in tweets[0]['media'][0]
         assert pending == [{
             'tweet_id': '123',
             'url': 'https://pbs.twimg.com/media/abc.jpg:orig',
@@ -629,18 +631,18 @@ class TestInjectImageLocalPaths:
                 {'type': 'video', 'url': 'https://video.twimg.com/foo.mp4'},
             ],
         }]
-        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        pending = xtap_core.collect_image_jobs(tweets, str(tmp_path))
         assert pending == []
         assert 'local_path' not in tweets[0]['media'][0]
 
     def test_skips_tweet_without_id(self, tmp_path):
         tweets = [{'media': [{'type': 'photo', 'url': 'https://pbs.twimg.com/media/x.jpg'}]}]
-        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        pending = xtap_core.collect_image_jobs(tweets, str(tmp_path))
         assert pending == []
 
     def test_handles_missing_media(self, tmp_path):
         tweets = [{'id': '123'}, {'id': '456', 'media': []}]
-        assert xtap_core.inject_image_local_paths(tweets, str(tmp_path)) == []
+        assert xtap_core.collect_image_jobs(tweets, str(tmp_path)) == []
 
     def test_enqueues_article_media(self, tmp_path):
         tweets = [{
@@ -660,7 +662,7 @@ class TestInjectImageLocalPaths:
                 ],
             },
         }]
-        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        pending = xtap_core.collect_image_jobs(tweets, str(tmp_path))
         assert [p['rel_path'] for p in pending] == [
             'media/999/HGxr957a0AAzHOk.jpg',
             'media/999/HGxr2u5a8AANAOy.jpg',
@@ -671,11 +673,11 @@ class TestInjectImageLocalPaths:
             'id': '999',
             'article': {'media': [{'url': 'https://pbs.twimg.com/media/x.jpg'}]},
         }]
-        assert xtap_core.inject_image_local_paths(tweets, str(tmp_path)) == []
+        assert xtap_core.collect_image_jobs(tweets, str(tmp_path)) == []
 
     def test_skips_photo_without_url(self, tmp_path):
         tweets = [{'id': '123', 'media': [{'type': 'photo', 'url': None}]}]
-        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        pending = xtap_core.collect_image_jobs(tweets, str(tmp_path))
         assert pending == []
         assert 'local_path' not in tweets[0]['media'][0]
 
@@ -684,7 +686,7 @@ class TestInjectImageLocalPaths:
             'id': '../../etc',
             'media': [{'type': 'photo', 'url': 'https://pbs.twimg.com/media/x.jpg'}],
         }]
-        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        pending = xtap_core.collect_image_jobs(tweets, str(tmp_path))
         assert pending == []
         assert 'local_path' not in tweets[0]['media'][0]
 
@@ -696,7 +698,7 @@ class TestInjectImageLocalPaths:
                 'local_path': '../../../../etc/passwd',
             }]},
         }]
-        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        pending = xtap_core.collect_image_jobs(tweets, str(tmp_path))
         assert pending == []
         # Unsafe local_path is stripped so the JSONL doesn't carry it.
         assert 'local_path' not in tweets[0]['article']['media'][0]
@@ -709,7 +711,7 @@ class TestInjectImageLocalPaths:
                 'local_path': '/etc/passwd',
             }]},
         }]
-        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        pending = xtap_core.collect_image_jobs(tweets, str(tmp_path))
         assert pending == []
         assert 'local_path' not in tweets[0]['article']['media'][0]
 
@@ -719,7 +721,7 @@ class TestInjectImageLocalPaths:
             'id': '123',
             'media': [{'type': 'photo', 'url': 'https://pbs.twimg.com/media/..'}],
         }]
-        pending = xtap_core.inject_image_local_paths(tweets, str(tmp_path))
+        pending = xtap_core.collect_image_jobs(tweets, str(tmp_path))
         assert pending == []
         assert 'local_path' not in tweets[0]['media'][0]
 
@@ -952,7 +954,7 @@ class TestImageDownloader:
     def test_rejects_unsafe_rel_path_at_worker(self, downloader, tmp_path, monkeypatch):
         called = []
         _patch_opener(monkeypatch, lambda *a, **kw: called.append(1) or _FakeResponse(b''))
-        # Even if a future caller skips inject_image_local_paths, the worker
+        # Even if a future caller skips collect_image_jobs, the worker
         # rejects an unsafe rel_path before any FS or network work.
         downloader.enqueue([{
             'tweet_id': '7',

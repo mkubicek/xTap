@@ -16,7 +16,7 @@ from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
                        validate_output_dir, write_tweets, write_log,
                        write_dump, test_path,
                        check_ytdlp, start_download, get_download_status,
-                       inject_image_local_paths, get_image_downloader)
+                       collect_image_jobs, get_image_downloader)
 
 VERSION = '0.23.0'
 BIND_HOST = '127.0.0.1'
@@ -157,9 +157,10 @@ class DaemonHandler(BaseHTTPRequestHandler):
             with _state_lock:
                 out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
                 tweets = body.get('tweets', [])
-                # Only stamp local_path onto media when we'll actually fetch
-                # the file. Keeps the JSONL clean for users who don't opt in.
-                pending_images = inject_image_local_paths(tweets, out_dir) if image_download else []
+                # Compute jobs only when we'll actually fetch — collect_image_jobs
+                # may strip unsafe article local_paths from the tweets, so we
+                # must call it before write_tweets to keep the JSONL clean.
+                pending_images = collect_image_jobs(tweets, out_dir) if image_download else []
                 count, dupes = write_tweets(tweets, out_dir, _seen_ids)
             queued = 0
             if pending_images:

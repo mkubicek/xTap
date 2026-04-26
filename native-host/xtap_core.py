@@ -427,19 +427,27 @@ def _is_safe_rel_path(out_dir, rel_path):
         return False
 
 
-def inject_image_local_paths(tweets, out_dir):
-    """Add `local_path` to each photo media item and return a list of pending downloads.
+def collect_image_jobs(tweets, out_dir):
+    """Compute the list of image download jobs for a batch of tweets.
 
-    Mutates tweets in place: every photo media item with a usable URL gets
-    `local_path = "media/<tweet_id>/<cdn_filename>"`. Article media items
-    (under `tweet.article.media[]`) already have `local_path` set by the JS
-    parser; this function validates them but does not overwrite them.
+    For top-level photo media the rel_path is derived by convention
+    (`media/<tweet_id>/<cdn_filename>`) — the JSONL never carries a
+    redundant `local_path` field for these. Consumers who need the path
+    can reconstruct it from `id` + `basename(url)`.
+
+    Article media items (under `tweet.article.media[]`) already have
+    `local_path` set by the JS parser because that path is also embedded
+    in the article's rendered Markdown text (`![](media/<id>/file.png)`).
+    Those entries are validated here but not mutated; if the supplied
+    `local_path` would escape `out_dir`, the field is stripped so the
+    unsafe path never lands in the JSONL.
 
     Path components are validated against `out_dir`: tweet IDs must match
-    [0-9]+, filenames must be plain basenames, and the final resolved path
-    must stay under `out_dir`. Anything that fails validation is skipped.
+    [0-9]+, filenames must be plain basenames, and the final resolved
+    path must stay under `out_dir`. Anything that fails validation is
+    skipped.
 
-    Returns: list of {tweet_id, url, rel_path} for the caller to enqueue.
+    Returns: list of {tweet_id, url, rel_path} ready for the downloader.
     """
     pending = []
     for tweet in tweets:
@@ -447,7 +455,7 @@ def inject_image_local_paths(tweets, out_dir):
         if not tweet_id or not isinstance(tweet_id, str) or not _TWEET_ID_RE.match(tweet_id):
             continue
 
-        # Top-level photo media (regular tweets).
+        # Top-level photo media (regular tweets) — derived path, no mutation.
         for item in tweet.get('media') or []:
             if not isinstance(item, dict) or item.get('type') != 'photo':
                 continue
@@ -458,12 +466,10 @@ def inject_image_local_paths(tweets, out_dir):
             rel_path = f'media/{tweet_id}/{filename}'
             if not _is_safe_rel_path(out_dir, rel_path):
                 continue
-            item['local_path'] = rel_path
             pending.append({'tweet_id': tweet_id, 'url': url, 'rel_path': rel_path})
 
-        # Article media (long-form posts) — local_path is set by the JS parser
-        # but we MUST re-validate it here: it crosses the trust boundary in
-        # the request body, so a crafted local_path could escape out_dir.
+        # Article media — local_path crosses the trust boundary in the
+        # request body, so re-validate it here.
         article = tweet.get('article') or {}
         for item in article.get('media') or []:
             if not isinstance(item, dict):
