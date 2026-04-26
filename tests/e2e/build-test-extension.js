@@ -24,7 +24,7 @@ const REPO_ROOT = resolve(__dirname, '..', '..');
 
 // --- Configuration -----------------------------------------------------------
 
-const PEM_PATH = join(__dirname, 'test-extension.pem');
+const PEM_PATH = join(__dirname, 'certs', 'test-extension.pem');
 
 // Files/dirs that make up the real extension (relative to repo root)
 const EXTENSION_FILES = [

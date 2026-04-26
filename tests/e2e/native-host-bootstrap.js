@@ -41,7 +41,7 @@ const HOST_NAME = 'com.xtap.host';
 const DAEMON_PORT = parseInt(process.env.XTAP_DAEMON_PORT || '17382', 10);
 const XTAP_DIR = join(homedir(), '.xtap');
 const SECRET_PATH = join(XTAP_DIR, 'secret');
-const PEM_PATH = join(__dirname, 'test-extension.pem');
+const PEM_PATH = join(__dirname, 'certs', 'test-extension.pem');
 const HOST_PY = join(REPO_ROOT, 'native-host', 'xtap_host.py');
 const DAEMON_PY = join(REPO_ROOT, 'native-host', 'xtap_daemon.py');
 
