@@ -593,6 +593,14 @@ class TestPhotoFilename:
             'https://pbs.twimg.com/media/abc.png:large'
         ) == 'abc.png'
 
+    def test_strips_all_known_size_suffixes(self):
+        # All Twitter image size suffixes — leaving any unstripped would put
+        # a colon in the filename, which is illegal on NTFS.
+        for suffix in ('orig', 'large', 'medium', 'small', 'thumb', 'tiny'):
+            assert xtap_core._photo_filename(
+                f'https://pbs.twimg.com/media/abc.jpg:{suffix}'
+            ) == 'abc.jpg', f'failed for :{suffix}'
+
     def test_no_suffix(self):
         assert xtap_core._photo_filename(
             'https://pbs.twimg.com/media/abc.jpg'
@@ -893,6 +901,54 @@ class TestImageDownloader:
         assert not (tmp_path / 'media' / '2' / 'missing.jpg').exists()
         entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
         assert entries[0]['status'] == 'error:http_404'
+
+    def test_429_retries_then_succeeds(self, downloader, tmp_path, monkeypatch):
+        """After two 429s the third attempt succeeds, file lands on disk."""
+        import urllib.error
+        attempts = {'n': 0}
+        body = b'\x89PNGsuccess'
+
+        def fake_open(req, timeout=None):
+            attempts['n'] += 1
+            if attempts['n'] < 3:
+                raise urllib.error.HTTPError(req.full_url, 429, 'Too Many', {}, None)
+            return _FakeResponse(body)
+
+        # Don't actually sleep through the backoff in tests.
+        monkeypatch.setattr(xtap_core.time, 'sleep', lambda s: None)
+        _patch_opener(monkeypatch, fake_open)
+        downloader.enqueue([{
+            'tweet_id': '10',
+            'url': 'https://pbs.twimg.com/media/rate.jpg',
+            'rel_path': 'media/10/rate.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(downloader)
+        assert attempts['n'] == 3
+        assert (tmp_path / 'media' / '10' / 'rate.jpg').read_bytes() == body
+        entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
+        assert entries[0]['status'] == 'ok'
+
+    def test_429_gives_up_after_max_attempts(self, downloader, tmp_path, monkeypatch):
+        """Persistent 429 returns error:http_429 after attempt 4."""
+        import urllib.error
+        attempts = {'n': 0}
+
+        def fake_open(req, timeout=None):
+            attempts['n'] += 1
+            raise urllib.error.HTTPError(req.full_url, 429, 'Too Many', {}, None)
+
+        monkeypatch.setattr(xtap_core.time, 'sleep', lambda s: None)
+        _patch_opener(monkeypatch, fake_open)
+        downloader.enqueue([{
+            'tweet_id': '11',
+            'url': 'https://pbs.twimg.com/media/rate.jpg',
+            'rel_path': 'media/11/rate.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(downloader)
+        # 3 retries (attempts < 4 in source) means 4 total tries.
+        assert attempts['n'] == 4
+        entries = [json.loads(l) for l in (tmp_path / 'media-manifest.jsonl').read_text().splitlines()]
+        assert entries[0]['status'] == 'error:http_429'
 
     def test_quota_skips(self, downloader, tmp_path, monkeypatch):
         # Pre-set bytes_downloaded above the cap so the next job hits 'skipped:quota'.

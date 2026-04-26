@@ -358,7 +358,7 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
 # --- Image download ---
 
 # Strip a trailing :orig / :large / :medium etc. suffix Twitter appends to media URLs.
-_TWIMG_SIZE_SUFFIX_RE = re.compile(r':(orig|large|medium|small|thumb)$')
+_TWIMG_SIZE_SUFFIX_RE = re.compile(r':(orig|large|medium|small|thumb|tiny)$')
 
 # Twitter snowflake IDs are numeric; reject anything else to block path traversal.
 _TWEET_ID_RE = re.compile(r'^[0-9]+$')

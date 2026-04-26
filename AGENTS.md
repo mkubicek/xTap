@@ -31,6 +31,8 @@ background.js (Service Worker, ES module)
 │   (Windows). Bearer token auth from ~/.xtap/secret             │
 │   Endpoints: GET /status, POST /tweets, /log, /test-path,     │
 │   /check-ytdlp, /download-video, /download-status             │
+│   /tweets accepts image_download:true to opt-in to background │
+│   image fetches; returns images_queued in the response.       │
 └────────────────────────────────────────────────────────────────┘
 ┌─── Native messaging (token bootstrap only) ───────────────────┐
 │ xtap_host.py (Python, stdio)                                   │
@@ -42,6 +44,8 @@ background.js (Service Worker, ES module)
   ▼
 tweets-YYYY-MM-DD.jsonl  (daily rotation)
 debug-YYYY-MM-DD.log     (when debug logging enabled)
+media/<tweet_id>/*       (when image download enabled)
+media-manifest.jsonl     (when image download enabled — append-only download log)
 ```
 
 ### Key Design Decisions
@@ -58,6 +62,7 @@ debug-YYYY-MM-DD.log     (when debug logging enabled)
 - **Path validation:** When the user sets a custom output directory, the service worker sends a `TEST_PATH` request to the HTTP daemon, which attempts `makedirs` + write/delete of a temp file before accepting the path.
 - **Error resilience:** The native host logs crashes to `~/.xtap/host-error.log` with Python version and traceback. The HTTP daemon returns error status codes and logs startup diagnostics (Python version, output dir, token status). When the daemon is unreachable, the extension shows a red "!" badge and buffers tweets until the next successful reprobe (30s cooldown). The popup auto-refreshes every 2 seconds to reflect transport state changes.
 - **Daemon debug logging:** Set `XTAP_LOG_LEVEL=debug` to get per-request logging (method, path, duration, tweet counts, tracebacks). Configured via environment variable in the service template (launchd/systemd). Re-run `install.sh` after changing.
+- **Image download tuning (env vars, all optional):** `XTAP_IMAGE_DELAY_MS` (default 100) sets the inter-request delay for the background image worker. `XTAP_MAX_FILE_MB` (default 50) caps the size of a single image; the worker aborts mid-stream and deletes the `.part` file when exceeded. `XTAP_MAX_MEDIA_MB` (default unset = unlimited) caps the cumulative bytes downloaded per process; further jobs log `skipped:quota`. Bad values fall back to defaults with a stderr warning instead of crashing the daemon.
 
 ## Stealth Constraints
 
@@ -73,6 +78,12 @@ debug-YYYY-MM-DD.log     (when debug logging enabled)
 8. **Only `open()` patched on XHR** — `send()` is not patched, so non-GraphQL XHR calls have clean stack traces.
 
 **Any change that adds network requests to X/Twitter domains must be rejected.**
+
+**Carve-outs (opt-in only, daemon-side, off by default):**
+- **Video download** (`/download-video`) — user-initiated via popup button; calls `pbs.twimg.com` / `video.twimg.com` and runs yt-dlp.
+- **Image download** (`image_download:true` on `/tweets`) — opt-in toggle in popup. The daemon fetches `pbs.twimg.com` photos in a single background worker. Hostname allowlist enforced; redirects blocked; per-file size cap; never enabled by default.
+
+The browser-side capture path stays passive. These carve-outs run on the daemon, not the extension, so the page itself never originates the request.
 
 ## File Structure
 
@@ -163,7 +174,7 @@ Each JSONL line contains:
 }
 ```
 
-Notes: `media[].duration_ms` only present for videos. `views` may be `null`. For retweets, `text` contains the full original tweet text (not the truncated `RT @user:` form). For articles, `is_article` and `article` are present — `article.text` is a markdown rendering with inline `![](media/<id>/file)` image refs, `article.blocks` preserves the raw Draft.js structure, and `article.media[]` lists images with CDN URLs and local paths (assuming `media/<tweet_id>/` layout). Article tweets bypass dedup so the enriched version (from `TweetResultByRestId`) replaces the stub captured from timeline endpoints.
+Notes: `media[].duration_ms` only present for videos. `views` may be `null`. For retweets, `text` contains the full original tweet text (not the truncated `RT @user:` form). For articles, `is_article` and `article` are present — `article.text` is a markdown rendering with inline `![](media/<id>/file)` image refs, `article.blocks` preserves the raw Draft.js structure, and `article.media[]` lists images with CDN URLs and local paths. Article tweets bypass dedup so the enriched version (from `TweetResultByRestId`) replaces the stub captured from timeline endpoints. Top-level `media[]` entries deliberately do NOT carry `local_path` — when image download is enabled, photos land at `media/<tweet_id>/<basename(url)>` by convention. Consumers reconstruct the path; the daemon never round-trips it through the JSONL.
 
 ## Known Issues
 
