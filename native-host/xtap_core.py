@@ -422,8 +422,7 @@ def _is_safe_rel_path(out_dir, rel_path):
     candidate = os.path.realpath(os.path.join(out_real, rel_path))
     try:
         return os.path.commonpath([out_real, candidate]) == out_real
-    except ValueError:
-        # Different drives on Windows.
+    except ValueError:  # pragma: no cover — Windows-only: different drives
         return False
 
 
@@ -561,7 +560,7 @@ class ImageDownloader:
         while True:
             try:
                 job, out_dir = self.queue.get()
-            except Exception:
+            except Exception:  # pragma: no cover — only fires at interpreter shutdown
                 continue
             try:
                 self._process(job, out_dir)
@@ -659,7 +658,7 @@ class ImageDownloader:
     def _log(self, out_dir, tweet_id, url, dest_path, status, size):
         try:
             local_path = os.path.relpath(dest_path, out_dir)
-        except ValueError:
+        except ValueError:  # pragma: no cover — Windows-only: different drives
             local_path = dest_path
         entry = {
             'timestamp': datetime.now(timezone.utc).isoformat(),
@@ -684,7 +683,7 @@ def _is_allowed_url(url):
         return False
     try:
         parsed = urlparse(url)
-    except ValueError:
+    except ValueError:  # pragma: no cover — urlparse rarely raises in practice
         return False
     if parsed.scheme != 'https':
         return False

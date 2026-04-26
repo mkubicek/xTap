@@ -733,6 +733,26 @@ class TestCollectImageJobs:
         assert pending == []
         assert 'local_path' not in tweets[0]['media'][0]
 
+    def test_top_level_photo_unsafe_rel_path_skipped(self, tmp_path, monkeypatch):
+        # Force _is_safe_rel_path to reject so we exercise the top-level skip
+        # branch (it is otherwise unreachable because tweet_id and filename
+        # are validated upstream).
+        monkeypatch.setattr(xtap_core, '_is_safe_rel_path', lambda _o, _r: False)
+        tweets = [{
+            'id': '123',
+            'media': [{'type': 'photo', 'url': 'https://pbs.twimg.com/media/abc.jpg'}],
+        }]
+        pending = xtap_core.collect_image_jobs(tweets, str(tmp_path))
+        assert pending == []
+
+    def test_skips_non_dict_article_media_item(self, tmp_path):
+        tweets = [{
+            'id': '999',
+            'article': {'media': ['not-a-dict', 42, None]},
+        }]
+        # Must not raise on non-dict items.
+        assert xtap_core.collect_image_jobs(tweets, str(tmp_path)) == []
+
 
 class TestPhotoFilenameHardening:
     def test_basename_strip_traversal(self):
@@ -1066,6 +1086,50 @@ class TestImageDownloader:
         req = urllib.request.Request('https://pbs.twimg.com/media/x.jpg')
         with pytest.raises(urllib.error.HTTPError):
             h.redirect_request(req, None, 302, 'Found', {}, 'https://evil.example.com/x.jpg')
+
+
+class TestImageDownloaderRateLimit:
+    def test_sleeps_to_enforce_inter_request_delay(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('XTAP_IMAGE_DELAY_MS', '50')
+        xtap_core.reset_image_downloader()
+        dl = xtap_core.ImageDownloader()
+        sleeps = []
+        # Pretend we just made a request right now so the next job has to wait.
+        dl._last_request_at = 1000.0
+        monkeypatch.setattr(xtap_core.time, 'monotonic', lambda: 1000.0)
+        monkeypatch.setattr(xtap_core.time, 'sleep', lambda s: sleeps.append(s))
+        _patch_opener(monkeypatch, lambda *a, **kw: _FakeResponse(b'x'))
+        dl.enqueue([{
+            'tweet_id': '20',
+            'url': 'https://pbs.twimg.com/media/r.jpg',
+            'rel_path': 'media/20/r.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(dl)
+        # The worker should have called time.sleep with ~delay_s seconds.
+        assert any(s > 0 for s in sleeps), f'expected positive sleep, got {sleeps}'
+
+
+class TestImageDownloaderManifest:
+    def test_manifest_write_oserror_swallowed(self, downloader, tmp_path, monkeypatch, capsys):
+        # Simulate a failing manifest write: open() raises PermissionError.
+        real_open = open
+
+        def fake_open(path, *args, **kwargs):
+            if str(path).endswith('media-manifest.jsonl'):
+                raise PermissionError('read-only filesystem')
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr('builtins.open', fake_open)
+        _patch_opener(monkeypatch, lambda *a, **kw: _FakeResponse(b'data'))
+        downloader.enqueue([{
+            'tweet_id': '21',
+            'url': 'https://pbs.twimg.com/media/m.jpg',
+            'rel_path': 'media/21/m.jpg',
+        }], str(tmp_path))
+        _wait_for_queue(downloader)
+        # Must not crash the worker. Stderr captures the warning line.
+        captured = capsys.readouterr()
+        assert 'manifest write failed' in captured.err
 
 
 class TestImageDownloaderSingleton:
