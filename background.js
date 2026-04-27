@@ -13,6 +13,12 @@ let captureEnabled = true;
 let buffer = [];
 let flushTimer = null;
 let seenIds = new Set();
+// Session-only set of tweet IDs already forwarded for image-backfill this SW
+// lifetime. Lets us re-enter the daemon once per duplicate-with-photos so
+// images skipped at original capture time get downloaded, without spamming
+// the daemon on every scroll/re-navigation. Cleared on SW restart by design
+// — the downloader's per-file os.path.exists is the source of truth.
+let imageCheckedIds = new Set();
 let sessionCount = 0;
 let allTimeCount = 0;
 let outputDir = '';
@@ -484,7 +490,7 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
       }
     }
 
-    if (!dedupTweet(tweet, seenIds)) {
+    if (!dedupTweet(tweet, seenIds, { imageBackfill: imageDownload, imageCheckedIds })) {
       emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'DEDUPLICATED', reason: 'seenIds' });
       continue;
     }
@@ -497,6 +503,10 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
   if (seenIds.size > MAX_SEEN_IDS) {
     const arr = [...seenIds];
     seenIds = new Set(arr.slice(arr.length - MAX_SEEN_IDS));
+  }
+  if (imageCheckedIds.size > MAX_SEEN_IDS) {
+    const arr = [...imageCheckedIds];
+    imageCheckedIds = new Set(arr.slice(arr.length - MAX_SEEN_IDS));
   }
 
   const dupeCount = tweets.length - newCount;

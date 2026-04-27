@@ -65,6 +65,77 @@ describe('dedupTweet (Bug 1: undefined poisoning)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Image backfill bypass: re-emit duplicates with photos so newly-enabled
+// auto-image-download can fetch media for already-scraped tweets. Once per
+// session per tweet ID, gated by imageCheckedIds.
+// ---------------------------------------------------------------------------
+
+const photoTweet = (id) => ({
+  id,
+  text: 'pic',
+  media: [{ type: 'photo', url: 'https://pbs.twimg.com/media/x.jpg:orig' }],
+});
+
+describe('dedupTweet (image-backfill bypass)', () => {
+  it('lets a duplicate photo tweet through once when imageBackfill is on', () => {
+    const seenIds = new Set(['1']);
+    const imageCheckedIds = new Set();
+    const opts = { imageBackfill: true, imageCheckedIds };
+    assert.equal(dedupTweet(photoTweet('1'), seenIds, opts), true,
+      'first duplicate with photos should pass through for backfill');
+    assert.ok(imageCheckedIds.has('1'),
+      'tweet must be marked as image-checked so we do not re-forward');
+  });
+
+  it('blocks the same duplicate photo tweet on the second pass', () => {
+    const seenIds = new Set(['1']);
+    const imageCheckedIds = new Set();
+    const opts = { imageBackfill: true, imageCheckedIds };
+    assert.equal(dedupTweet(photoTweet('1'), seenIds, opts), true);
+    assert.equal(dedupTweet(photoTweet('1'), seenIds, opts), false,
+      'second pass should be deduplicated again');
+  });
+
+  it('does not bypass dedup for duplicates without photo media', () => {
+    const seenIds = new Set(['1']);
+    const imageCheckedIds = new Set();
+    const opts = { imageBackfill: true, imageCheckedIds };
+    assert.equal(dedupTweet({ id: '1', text: 'no media' }, seenIds, opts), false);
+    assert.equal(
+      dedupTweet({ id: '1', text: 'video', media: [{ type: 'video' }] }, seenIds, opts),
+      false,
+      'video-only tweets are not handled by the image pipeline'
+    );
+    assert.ok(!imageCheckedIds.has('1'));
+  });
+
+  it('does not bypass when imageBackfill is off (default)', () => {
+    const seenIds = new Set(['1']);
+    assert.equal(dedupTweet(photoTweet('1'), seenIds), false);
+    assert.equal(
+      dedupTweet(photoTweet('1'), seenIds, { imageBackfill: false, imageCheckedIds: new Set() }),
+      false
+    );
+  });
+
+  it('marks first-seen photo tweets in imageCheckedIds', () => {
+    const seenIds = new Set();
+    const imageCheckedIds = new Set();
+    const opts = { imageBackfill: true, imageCheckedIds };
+    assert.equal(dedupTweet(photoTweet('42'), seenIds, opts), true);
+    assert.ok(seenIds.has('42'));
+    assert.ok(imageCheckedIds.has('42'),
+      'first-seen photo tweets must also be tracked so the next view does not re-forward');
+  });
+
+  it('does not require imageCheckedIds when imageBackfill is off', () => {
+    const seenIds = new Set();
+    assert.equal(dedupTweet({ id: '1', text: 'first' }, seenIds), true);
+    assert.equal(dedupTweet({ id: '1', text: 'dupe' }, seenIds), false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Bug 2: XHR listener stacking — evaluates production content-main.js via vm
 // ---------------------------------------------------------------------------
 
