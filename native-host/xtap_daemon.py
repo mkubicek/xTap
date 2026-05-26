@@ -18,7 +18,7 @@ from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
                        check_ytdlp, start_download, get_download_status,
                        collect_image_jobs, get_image_downloader)
 
-VERSION = '0.23.1'
+VERSION = '0.23.2'
 BIND_HOST = '127.0.0.1'
 BIND_PORT = int(os.environ.get('XTAP_DAEMON_PORT', 17381))
 MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
