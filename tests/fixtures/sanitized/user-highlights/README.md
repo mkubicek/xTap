@@ -13,7 +13,7 @@ xTap tweet parsing pipeline.
 - Tweet normalization (author, text, metrics, media, URLs, mentions)
 - Reply chains, quote tweets, retweets
 - Note tweets (long-form posts)
-- Article stubs
+- Article stubs (skipped when full content is unavailable)
 - Card embeds
 - Cursor entries (skipped by parser)
 

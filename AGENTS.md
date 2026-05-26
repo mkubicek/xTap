@@ -119,7 +119,7 @@ The tweet parser (`lib/tweet-parser.js`) has known instruction paths for:
 
 `HomeTimeline`, `HomeLatestTimeline`, `UserTweets`, `UserTweetsAndReplies`, `UserMedia`, `UserLikes`, `TweetDetail`, `SearchTimeline`, `ListLatestTweetsTimeline`, `Bookmarks`, `Likes`, `CommunityTweetsTimeline`, `BookmarkFolderTimeline`
 
-`TweetResultByRestId` is also handled — it returns a single tweet (not a timeline) and is only processed when the tweet contains article data (long-form posts). This avoids duplicating tweets already captured from timeline endpoints.
+`TweetResultByRestId` is also handled — it returns a single tweet (not a timeline). Full article payloads from this endpoint are captured when `content_state.blocks` is present; article stubs without the body are skipped so they do not poison dedup.
 
 Unknown endpoints fall back to a recursive search for `instructions[]` arrays (max depth 5). Non-tweet endpoints are filtered in `background.js` via `IGNORED_ENDPOINTS`.
 
@@ -174,7 +174,7 @@ Each JSONL line contains:
 }
 ```
 
-Notes: `media[].duration_ms` only present for videos. `views` may be `null`. For retweets, `text` contains the full original tweet text (not the truncated `RT @user:` form). For articles, `is_article` and `article` are present — `article.text` is a markdown rendering with inline `![](media/<id>/file)` image refs, `article.blocks` preserves the raw Draft.js structure, and `article.media[]` lists images with CDN URLs and local paths. Article tweets bypass dedup so the enriched version (from `TweetResultByRestId`) replaces the stub captured from timeline endpoints. Top-level `media[]` entries deliberately do NOT carry `local_path` — when image download is enabled, photos land at `media/<tweet_id>/<basename(url)>` by convention. Consumers reconstruct the path; the daemon never round-trips it through the JSONL.
+Notes: `media[].duration_ms` only present for videos. `views` may be `null`. For retweets, `text` contains the full original tweet text (not the truncated `RT @user:` form). For articles, `is_article` and `article` are present — `article.text` is a markdown rendering with inline `![](media/<id>/file)` image refs, `article.blocks` preserves the raw Draft.js structure, and `article.media[]` lists images with CDN URLs and local paths. Article stubs without `content_state.blocks` are skipped rather than saved as incomplete rows, so a later full article payload can still be captured. Top-level `media[]` entries deliberately do NOT carry `local_path` — when image download is enabled, photos land at `media/<tweet_id>/<basename(url)>` by convention. Consumers reconstruct the path; the daemon never round-trips it through the JSONL.
 
 ## Known Issues
 

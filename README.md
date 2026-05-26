@@ -32,7 +32,7 @@ xTap is a browser extension (Chrome + Firefox) that silently intercepts the Grap
 
 - **Zero footprint** — no additional network requests; captures what your browser already receives
 - **Structured output** — each tweet saved as a clean JSON object with author, metrics, media, and more
-- **Article support** — long-form X articles are captured with full text, inline image references, and Draft.js block structure
+- **Article support** — long-form X articles are captured when X returns the full body, with inline image references and Draft.js block structure
 - **Video download** — download videos from tweets using yt-dlp (or direct MP4 fallback) via the extension popup. Requires the HTTP daemon. **Note:** unlike passive capture, video downloads make additional network requests to X and are not stealth.
 - **Image download** — opt-in toggle in the popup ("Download images automatically") fetches photos from `pbs.twimg.com` to `<output_dir>/media/<tweet_id>/<filename>` as you browse. Daemon-side; rate-limited; logs to `media-manifest.jsonl`. **Note:** also not stealth — adds requests to the Twitter CDN.
 - **Pause / resume** — click the extension icon to toggle capture on the fly
@@ -331,7 +331,7 @@ Output is written to daily files (`tweets-YYYY-MM-DD.jsonl`). Each line is a sel
 }
 ```
 
-For regular tweets, `is_article` and `article` are absent. For articles, `text` contains a markdown-style rendering of the article with inline image references pointing to `media/<tweet_id>/`.
+For regular tweets, `is_article` and `article` are absent. For articles, `text` contains a markdown-style rendering of the article with inline image references pointing to `media/<tweet_id>/`. Article stubs without `content_state.blocks` are skipped rather than saved as incomplete rows.
 
 ### Media file convention
 

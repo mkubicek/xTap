@@ -13,7 +13,7 @@ xTap tweet parsing pipeline.
 - Tweet normalization (author, text, metrics, media, URLs, mentions)
 - Reply chains, quote tweets, retweets
 - Note tweets (long-form posts)
-- Article stubs
+- Article stubs (skipped when full content is unavailable)
 - Card embeds
 - Cursor entries (skipped by parser)
 
@@ -46,7 +46,7 @@ and author references remain internally consistent.
 ## Invariants
 
 - `fixture.json` fed to `extractTweets("HomeTimeline", data)` must produce
-  exactly 39 tweets matching `expected.jsonl`
+  exactly 38 tweets matching `expected.jsonl`
 - All `in_reply_to`, `quoted_tweet_id`, and `conversation_id` values that
   reference tweets in the fixture use the same remapped IDs
 - Author IDs and handles are consistent across all tweets by the same user

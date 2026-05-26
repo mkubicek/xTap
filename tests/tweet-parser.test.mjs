@@ -221,6 +221,20 @@ describe('normalizeTweet', () => {
     assert.equal(t.article.title, 'My Article');
   });
 
+  it('skips article stubs without full content', () => {
+    const raw = makeRawTweet({
+      article: {
+        article_results: {
+          result: {
+            title: 'Stub only',
+            preview_text: 'Preview only',
+          },
+        },
+      },
+    });
+    assert.equal(normalizeTweet(raw), null);
+  });
+
   it('converts created_at to ISO format', () => {
     const raw = makeRawTweet();
     const t = normalizeTweet(raw);
@@ -569,6 +583,40 @@ describe('extractTweets', () => {
     const tweets = extractTweets('TweetResultByRestId', data);
     assert.equal(tweets.length, 1);
     assert.equal(tweets[0].is_article, true);
+  });
+
+  it('TweetResultByRestId with article stub returns no tweet', () => {
+    const raw = makeRawTweet({
+      article: {
+        article_results: {
+          result: {
+            title: 'Stub only',
+            preview_text: 'Preview only',
+          },
+        },
+      },
+    });
+    const data = {
+      data: { tweetResult: { result: raw } },
+    };
+    const tweets = extractTweets('TweetResultByRestId', data);
+    assert.deepStrictEqual(tweets, []);
+  });
+
+  it('timeline article stub returns no tweet', () => {
+    const raw = makeRawTweet({
+      article: {
+        article_results: {
+          result: {
+            title: 'Stub only',
+            preview_text: 'Preview only',
+          },
+        },
+      },
+    });
+    const data = makeTimelineResponse(raw);
+    const tweets = extractTweets('HomeTimeline', data);
+    assert.deepStrictEqual(tweets, []);
   });
 
   it('skips cursor entries', () => {

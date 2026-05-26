@@ -2,20 +2,16 @@
 
 ## Scenario
 
-Basic timeline capture from a `UserArticlesTweets` response exercising the core
-xTap tweet parsing pipeline.
+Timeline capture from a `UserArticlesTweets` response where every tweet is an
+article stub without full body content.
 
 ## What it covers
 
 - Timeline instruction parsing (TimelineAddEntries)
 - Single tweet items (TimelineTimelineItem)
 - Conversation modules (TimelineTimelineModule)
-- Tweet normalization (author, text, metrics, media, URLs, mentions)
-- Reply chains, quote tweets, retweets
-- Note tweets (long-form posts)
-- Article stubs
-- Card embeds
-- Cursor entries (skipped by parser)
+- Article stubs skipped when full content is unavailable
+- Empty parser output when no complete tweets remain
 
 ## Raw input
 
@@ -46,7 +42,7 @@ and author references remain internally consistent.
 ## Invariants
 
 - `fixture.json` fed to `extractTweets("UserArticlesTweets", data)` must produce
-  exactly 12 tweets matching `expected.jsonl`
+  exactly 0 tweets matching `expected.jsonl`
 - All `in_reply_to`, `quoted_tweet_id`, and `conversation_id` values that
   reference tweets in the fixture use the same remapped IDs
 - Author IDs and handles are consistent across all tweets by the same user
