@@ -334,8 +334,8 @@ async function run() {
       // Compare only this scenario's tweets (slice off previous scenarios)
       const scenarioActual = actual.slice(cumulativeTweets);
       const expectedJsonl = join(scenario.dir, scenario.manifest.files.expected);
-      const expectedLines = readFileSync(expectedJsonl, 'utf8').trim().split('\n');
-      const expected = expectedLines.map(l => JSON.parse(l));
+      const expectedText = readFileSync(expectedJsonl, 'utf8').trim();
+      const expected = expectedText ? expectedText.split('\n').map(l => JSON.parse(l)) : [];
 
       const result = compareJsonl(scenarioActual, expected);
       if (!result.pass) {

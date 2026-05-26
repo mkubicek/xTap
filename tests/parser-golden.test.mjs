@@ -61,8 +61,8 @@ describe('parser golden scenarios', () => {
   for (const { name, dir, manifest } of scenarios) {
     it(name, () => {
       const fixture = JSON.parse(readFileSync(join(dir, manifest.files.fixture), 'utf8'));
-      const expectedLines = readFileSync(join(dir, manifest.files.expected), 'utf8').trim().split('\n');
-      const expected = expectedLines.map(l => JSON.parse(l));
+      const expectedText = readFileSync(join(dir, manifest.files.expected), 'utf8').trim();
+      const expected = expectedText ? expectedText.split('\n').map(l => JSON.parse(l)) : [];
 
       const actual = extractTweets(manifest.endpoint, fixture);
       // source_endpoint is set by the caller (service worker), not by extractTweets
