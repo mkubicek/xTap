@@ -17,6 +17,8 @@
         <string>__PATH__</string>
         <key>XTAP_LOG_LEVEL</key>
         <string>__LOG_LEVEL__</string>
+        <key>XTAP_OUTPUT_DIR</key>
+        <string>__OUTPUT_DIR__</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

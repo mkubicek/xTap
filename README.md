@@ -261,16 +261,19 @@ If the extension shows "Not connected" or a red "!" badge:
 
 The easiest way to change where tweets are saved is through the extension popup — click the xTap icon and enter your preferred path in the **Output directory** field.
 
-Alternatively, set the `XTAP_OUTPUT_DIR` environment variable before launching your browser:
+Alternatively, set the `XTAP_OUTPUT_DIR` environment variable and re-run the installer — the daemon runs as a system service (launchd/systemd/Scheduled Task), so the variable must be baked into the service definition; exporting it in a shell or before launching the browser has no effect:
 
 ```bash
 export XTAP_OUTPUT_DIR="$HOME/Documents/xtap-data"
+./native-host/install.sh <extension-id> [chrome|firefox]
 ```
+
+On Windows, set it as a *user* environment variable (`[Environment]::SetEnvironmentVariable('XTAP_OUTPUT_DIR', 'D:\\path', 'User')`) and re-run `install.ps1`.
 
 | Setting | Default | Description |
 |---|---|---|
 | Popup "Output directory" | *(empty — uses default)* | Overrides the output path per-session |
-| `XTAP_OUTPUT_DIR` env var | `~/Downloads/xtap` | Fallback when no popup setting is configured |
+| `XTAP_OUTPUT_DIR` env var | `~/Downloads/xtap` | Fallback when no popup setting is configured (set at install time) |
 | Debug Dashboard | — | Accessible via popup link; shows live capture events, transport health, debug logging and discovery mode toggles, and parser sandbox |
 
 > **macOS note:** On macOS, the HTTP daemon (installed via `install.sh`) runs outside browser TCC sandboxes and can write to protected paths like `~/Documents` and iCloud Drive after a one-time macOS permission prompt.

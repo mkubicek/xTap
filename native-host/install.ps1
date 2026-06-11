@@ -18,7 +18,11 @@ $HostName = "com.xtap.host"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $HostPy = Join-Path $ScriptDir "xtap_host.py"
 $BatPath = Join-Path $ScriptDir "xtap_host.bat"
-$ManifestPath = Join-Path $ScriptDir "$HostName.json"
+# Per-browser file: Chrome needs allowed_origins, Firefox allowed_extensions.
+# A shared file would let the second install break the first browser (both
+# registry keys would point at a manifest missing their key). The generated
+# name also avoids clobbering the repo's template JSON files.
+$ManifestPath = Join-Path $ScriptDir "$HostName.$Browser.generated.json"
 
 if (-not $ExtensionId -and $Browser -eq "firefox") {
     $ExtensionId = "xtap@mkubicek.dev"
@@ -43,7 +47,7 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
 # Write manifest (path must point to the .bat wrapper)
 $manifestData = @{
     name = $HostName
-    description = "xTap native messaging host -- writes captured tweets to JSONL"
+    description = "xTap native messaging host -- passes the HTTP daemon auth token to the extension"
     path = $BatPath
     type = "stdio"
 }
@@ -128,5 +132,8 @@ Write-Host "  Stop-ScheduledTask -TaskName $TaskName"
 
 Write-Host ""
 $outputDir = if ($env:XTAP_OUTPUT_DIR) { $env:XTAP_OUTPUT_DIR } else { Join-Path $HOME "Downloads\xtap" }
-Write-Host "Output directory (set XTAP_OUTPUT_DIR to change):"
+Write-Host "Output directory:"
 Write-Host "  $outputDir"
+Write-Host "To change it, set XTAP_OUTPUT_DIR as a *user* environment variable"
+Write-Host "(scheduled tasks do not see shell-session variables), then re-run:"
+Write-Host "  [Environment]::SetEnvironmentVariable('XTAP_OUTPUT_DIR', 'D:\path', 'User')"

@@ -114,7 +114,7 @@ if [ "$BROWSER" = "firefox" ]; then
   cat > "$MANIFEST_PATH" <<EOF
 {
   "name": "${HOST_NAME}",
-  "description": "xTap native messaging host — writes captured tweets to JSONL",
+  "description": "xTap native messaging host — passes the HTTP daemon auth token to the extension",
   "path": "${WRAPPER_PATH}",
   "type": "stdio",
   "allowed_extensions": ["${EXT_ID}"]
@@ -124,7 +124,7 @@ else
   cat > "$MANIFEST_PATH" <<EOF
 {
   "name": "${HOST_NAME}",
-  "description": "xTap native messaging host — writes captured tweets to JSONL",
+  "description": "xTap native messaging host — passes the HTTP daemon auth token to the extension",
   "path": "${WRAPPER_PATH}",
   "type": "stdio",
   "allowed_origins": ["chrome-extension://${EXT_ID}/"]
@@ -176,6 +176,10 @@ if [ "$OS" = "Darwin" ]; then
   # Capture user's PATH so the daemon can find yt-dlp and other tools
   USER_PATH="$PATH"
   XTAP_LOG_LEVEL="${XTAP_LOG_LEVEL:-info}"
+  # Bake the output dir into the service environment — launchd does not
+  # inherit shell exports, so this is the only way XTAP_OUTPUT_DIR reaches
+  # the daemon (re-run install.sh after changing it).
+  XTAP_OUTPUT_DIR="${XTAP_OUTPUT_DIR:-$HOME/Downloads/xtap}"
 
   # Substitute plist template
   mkdir -p "$HOME/Library/LaunchAgents"
@@ -185,6 +189,7 @@ if [ "$OS" = "Darwin" ]; then
     -e "s|__HOME_DIR__|${HOME}|g" \
     -e "s|__PATH__|${USER_PATH}|g" \
     -e "s|__LOG_LEVEL__|${XTAP_LOG_LEVEL}|g" \
+    -e "s|__OUTPUT_DIR__|${XTAP_OUTPUT_DIR}|g" \
     "$PLIST_TEMPLATE" > "$PLIST_DEST"
 
   # Load daemon
@@ -226,6 +231,10 @@ if [ "$OS" = "Linux" ]; then
   # Capture user's PATH so the daemon can find yt-dlp and other tools
   USER_PATH="$PATH"
   XTAP_LOG_LEVEL="${XTAP_LOG_LEVEL:-info}"
+  # Bake the output dir into the service environment — systemd does not
+  # inherit shell exports, so this is the only way XTAP_OUTPUT_DIR reaches
+  # the daemon (re-run install.sh after changing it).
+  XTAP_OUTPUT_DIR="${XTAP_OUTPUT_DIR:-$HOME/Downloads/xtap}"
 
   # Substitute service template
   mkdir -p "$SERVICE_DIR"
@@ -235,6 +244,7 @@ if [ "$OS" = "Linux" ]; then
     -e "s|__HOME_DIR__|${HOME}|g" \
     -e "s|__PATH__|${USER_PATH}|g" \
     -e "s|__LOG_LEVEL__|${XTAP_LOG_LEVEL}|g" \
+    -e "s|__OUTPUT_DIR__|${XTAP_OUTPUT_DIR}|g" \
     "$SERVICE_TEMPLATE" > "$SERVICE_DEST"
 
   # Reload and enable
@@ -253,7 +263,7 @@ if [ "$OS" = "Linux" ]; then
 fi
 
 echo ""
-echo "Output directory (set XTAP_OUTPUT_DIR to change):"
+echo "Output directory (set XTAP_OUTPUT_DIR and re-run install to change):"
 echo "  ${XTAP_OUTPUT_DIR:-$HOME/Downloads/xtap}"
 echo ""
 echo "Debug logging (re-run install after setting):"

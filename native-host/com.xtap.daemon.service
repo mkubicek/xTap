@@ -7,6 +7,7 @@ ExecStart=__PYTHON_PATH__ __DAEMON_PATH__
 Environment=HOME=__HOME_DIR__
 Environment=PATH=__PATH__
 Environment=XTAP_LOG_LEVEL=__LOG_LEVEL__
+Environment=XTAP_OUTPUT_DIR=__OUTPUT_DIR__
 Restart=always
 RestartSec=5
 
