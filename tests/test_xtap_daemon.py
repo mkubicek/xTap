@@ -2,8 +2,13 @@
 
 import json
 import os
+import platform
+import signal
+import socket
+import subprocess
 import sys
 import threading
+import time
 
 import pytest
 import urllib.request
@@ -28,6 +33,18 @@ def _set_module_token():
     xtap_daemon._token = TEST_TOKEN
     yield
     xtap_daemon._token = old
+
+
+@pytest.fixture(autouse=True)
+def _isolate_default_output_dir(tmp_path, monkeypatch):
+    """Point the daemon's default output dir at a tmp dir. resolve_output_dir
+    lazily loads seen IDs for it, and tests must never touch the user's real
+    ~/Downloads/xtap (slow with a large archive; blocked by macOS TCC in
+    sandboxed runs)."""
+    default = tmp_path / 'default-out'
+    default.mkdir()
+    monkeypatch.setattr(xtap_daemon, 'DEFAULT_OUTPUT_DIR', str(default))
+    monkeypatch.setattr(xtap_daemon, '_seen_ids_by_dir', {})
 
 
 @pytest.fixture()
@@ -436,3 +453,92 @@ class TestConcurrency:
             del xtap_core._downloads[download_id]
 
         assert not errors, f'Found incoherent reads: {errors[:5]}'
+
+
+# ---------------------------------------------------------------------------
+# Tests — signal shutdown (the handler must not deadlock serve_forever)
+# ---------------------------------------------------------------------------
+
+class TestSignalShutdown:
+
+    @pytest.mark.skipif(platform.system() == 'Windows', reason='POSIX signals only')
+    def test_sigterm_exits_promptly(self, tmp_path):
+        """server.shutdown() invoked directly inside a signal handler runs on
+        the same thread as serve_forever() and deadlocks — launchd/systemd
+        then SIGKILLs mid-write. The daemon must exit cleanly within 5s."""
+        port = _free_port()
+        (tmp_path / '.xtap').mkdir()
+        (tmp_path / '.xtap' / 'secret').write_text('test-token')
+        env = {**os.environ,
+               'HOME': str(tmp_path),
+               'XTAP_DAEMON_PORT': str(port),
+               'XTAP_OUTPUT_DIR': str(tmp_path / 'out')}
+        daemon_py = os.path.join(
+            os.path.dirname(os.path.abspath(xtap_daemon.__file__)), 'xtap_daemon.py')
+        proc = subprocess.Popen([sys.executable, daemon_py], env=env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                text=True)
+        stderr_lines = []
+        threading.Thread(
+            target=lambda: stderr_lines.extend(proc.stderr), daemon=True).start()
+        try:
+            deadline = time.time() + 10
+            while not any('Listening' in line for line in stderr_lines):
+                if proc.poll() is not None:
+                    pytest.fail(f'daemon exited early: {"".join(stderr_lines)}')
+                if time.time() > deadline:
+                    pytest.fail(f'daemon never started: {"".join(stderr_lines)}')
+                time.sleep(0.05)
+
+            proc.send_signal(signal.SIGTERM)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pytest.fail('daemon did not exit within 5s of SIGTERM (shutdown deadlock)')
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+
+
+def _free_port():
+    s = socket.socket()
+    s.bind(('127.0.0.1', 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+# ---------------------------------------------------------------------------
+# Tests — article local_path sanitization must not depend on image toggle
+# ---------------------------------------------------------------------------
+
+class TestArticlePathSanitization:
+
+    def test_unsafe_local_path_stripped_without_image_download(
+            self, daemon_url, tmp_path, monkeypatch):
+        """Traversal-laden article local_path values must be stripped from the
+        JSONL even when image_download is off — downstream consumers join
+        out_dir + local_path."""
+        monkeypatch.setattr(xtap_core, '_ALLOWED_ROOTS',
+                            (os.path.realpath(str(tmp_path)),))
+        out_dir = str(tmp_path / 'out')
+        body = {
+            'outputDir': out_dir,
+            'tweets': [{
+                'id': '777000777',
+                'text': 'article',
+                'is_article': True,
+                'article': {'media': [{
+                    'url': 'https://pbs.twimg.com/media/abc.jpg',
+                    'local_path': '../../../../etc/evil.jpg',
+                }]},
+            }],
+        }
+        status, resp = _post(daemon_url, '/tweets', body, token=TEST_TOKEN)
+        assert status == 200
+        assert resp['ok'] is True
+        files = list((tmp_path / 'out').glob('tweets-*.jsonl'))
+        assert len(files) == 1
+        line = json.loads(files[0].read_text(encoding='utf-8').strip())
+        assert 'local_path' not in line['article']['media'][0]

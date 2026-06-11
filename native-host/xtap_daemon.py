@@ -40,7 +40,7 @@ def log_debug(msg):
 
 def load_token():
     try:
-        with open(XTAP_SECRET, 'r') as f:
+        with open(XTAP_SECRET, 'r', encoding='utf-8') as f:
             return f.read().strip()
     except FileNotFoundError:
         log_info(f'FATAL: {XTAP_SECRET} not found. Run install.sh first.')
@@ -49,8 +49,7 @@ def load_token():
 
 # Module-level state shared across requests
 _token = None
-_seen_ids = set()
-_custom_dirs = set()
+_seen_ids_by_dir = {}
 _state_lock = threading.Lock()
 
 
@@ -155,15 +154,16 @@ class DaemonHandler(BaseHTTPRequestHandler):
             # silently turning the feature on.
             image_download = body.get('image_download') is True
             with _state_lock:
-                out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
+                out_dir, seen_ids = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids_by_dir)
                 tweets = body.get('tweets', [])
-                # Compute jobs only when we'll actually fetch — collect_image_jobs
-                # may strip unsafe article local_paths from the tweets, so we
-                # must call it before write_tweets to keep the JSONL clean.
-                pending_images = collect_image_jobs(tweets, out_dir) if image_download else []
-                count, dupes = write_tweets(tweets, out_dir, _seen_ids)
+                # Always collect before write_tweets: collect_image_jobs strips
+                # unsafe article local_paths from the tweets so traversal paths
+                # never land in the JSONL — sanitization must not depend on the
+                # image_download toggle.
+                pending_images = collect_image_jobs(tweets, out_dir)
+                count, dupes = write_tweets(tweets, out_dir, seen_ids)
             queued = 0
-            if pending_images:
+            if image_download and pending_images:
                 get_image_downloader().enqueue(pending_images, out_dir)
                 queued = len(pending_images)
             log_debug(f'  Tweets: {count} written, {dupes} dupes, {queued} images queued -> {out_dir}')
@@ -178,10 +178,12 @@ class DaemonHandler(BaseHTTPRequestHandler):
     def _handle_log(self, body):
         try:
             msg_dir = body.get('outputDir', '').strip()
-            with _state_lock:
-                out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
             lines = body.get('lines', [])
-            logged = write_log(lines, out_dir)
+            with _state_lock:
+                out_dir, _ = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids_by_dir)
+                # Write under the lock — concurrent appends through separate
+                # file objects can interleave mid-line at buffer boundaries.
+                logged = write_log(lines, out_dir)
             self._send_json({'ok': True, 'logged': logged})
         except ValueError as e:
             self._send_json({'ok': False, 'error': str(e)}, 400)
@@ -194,7 +196,7 @@ class DaemonHandler(BaseHTTPRequestHandler):
         try:
             msg_dir = body.get('outputDir', '').strip()
             with _state_lock:
-                out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
+                out_dir, _ = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids_by_dir)
                 filename = body.get('filename', 'dump.json')
                 content = body.get('content', '')
                 path = write_dump(filename, content, out_dir)
@@ -233,7 +235,7 @@ class DaemonHandler(BaseHTTPRequestHandler):
             post_date = body.get('postDate', '')
             msg_dir = body.get('outputDir', '').strip()
             with _state_lock:
-                out_dir = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids, _custom_dirs)
+                out_dir, _ = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids_by_dir)
             download_id = str(uuid.uuid4())
             start_download(download_id, tweet_url, direct_url, out_dir, post_date)
             log_debug(f'  Download started: {download_id} -> {tweet_url}')
@@ -261,9 +263,9 @@ def _setup_stdio():
         return
     os.makedirs(XTAP_DIR, exist_ok=True)
     if sys.stdout is None:
-        sys.stdout = open(os.path.join(XTAP_DIR, 'daemon-stdout.log'), 'a')
+        sys.stdout = open(os.path.join(XTAP_DIR, 'daemon-stdout.log'), 'a', encoding='utf-8')
     if sys.stderr is None:
-        sys.stderr = open(os.path.join(XTAP_DIR, 'daemon-stderr.log'), 'a')
+        sys.stderr = open(os.path.join(XTAP_DIR, 'daemon-stderr.log'), 'a', encoding='utf-8')
 
 
 def _log_startup_diagnostics():
@@ -290,7 +292,7 @@ def _log_startup_diagnostics():
 
 
 def main():
-    global _token, _seen_ids
+    global _token
 
     _setup_stdio()
 
@@ -298,10 +300,10 @@ def main():
 
     # Initialize output directory and seen IDs
     os.makedirs(DEFAULT_OUTPUT_DIR, exist_ok=True)
-    _seen_ids = load_seen_ids(DEFAULT_OUTPUT_DIR)
+    _seen_ids_by_dir[DEFAULT_OUTPUT_DIR] = load_seen_ids(DEFAULT_OUTPUT_DIR)
 
     _log_startup_diagnostics()
-    log_info(f'  Seen IDs:   {len(_seen_ids)} loaded')
+    log_info(f'  Seen IDs:   {len(_seen_ids_by_dir[DEFAULT_OUTPUT_DIR])} loaded')
 
     try:
         server = ThreadingHTTPServer((BIND_HOST, BIND_PORT), DaemonHandler)
@@ -312,7 +314,11 @@ def main():
 
     def shutdown(signum, frame):
         log_info(f'Received signal {signum}, shutting down...')
-        server.shutdown()
+        # shutdown() must run on a different thread than serve_forever(): the
+        # signal handler interrupts the serve_forever thread, and shutdown()
+        # blocks until serve_forever exits — calling it inline deadlocks until
+        # launchd/systemd escalates to SIGKILL (killing in-flight writes).
+        threading.Thread(target=server.shutdown, daemon=True).start()
 
     signal.signal(signal.SIGINT, shutdown)
     if platform.system() == 'Windows':

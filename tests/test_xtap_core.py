@@ -1,5 +1,6 @@
 """Tests for native-host/xtap_core.py"""
 
+import builtins
 import json
 import os
 import sys
@@ -163,20 +164,18 @@ class TestWriteTweets:
 class TestResolveOutputDir:
     def test_falsy_msg_dir(self, tmp_path):
         default = str(tmp_path / 'default')
-        result = xtap_core.resolve_output_dir('', default, set(), set())
+        result, _ = xtap_core.resolve_output_dir('', default, {})
         assert result == default
 
     def test_none_msg_dir(self, tmp_path):
         default = str(tmp_path / 'default')
-        result = xtap_core.resolve_output_dir(None, default, set(), set())
+        result, _ = xtap_core.resolve_output_dir(None, default, {})
         assert result == default
 
     def test_custom_dir_created(self, tmp_path, monkeypatch):
         monkeypatch.setattr(xtap_core, '_ALLOWED_ROOTS', (os.path.realpath(str(tmp_path)),))
         custom = str(tmp_path / 'custom')
-        seen = set()
-        custom_dirs = set()
-        result = xtap_core.resolve_output_dir(custom, '/default', seen, custom_dirs)
+        result, _ = xtap_core.resolve_output_dir(custom, '/default', {})
         assert os.path.realpath(result) == os.path.realpath(custom)
         assert os.path.isdir(result)
 
@@ -184,20 +183,19 @@ class TestResolveOutputDir:
         monkeypatch.setattr(xtap_core, '_ALLOWED_ROOTS', (os.path.realpath(str(tmp_path)),))
         custom = str(tmp_path / 'custom')
         os.makedirs(custom)
-        seen = set()
-        custom_dirs = set()
-        # First call adds to custom_dirs
-        result = xtap_core.resolve_output_dir(custom, '/default', seen, custom_dirs)
-        assert result in custom_dirs
-        # Second call — custom_dirs already has it, load_seen_ids not called again
-        old_size = len(custom_dirs)
-        xtap_core.resolve_output_dir(custom, '/default', seen, custom_dirs)
-        assert len(custom_dirs) == old_size
+        calls = []
+        orig_load = xtap_core.load_seen_ids
+        monkeypatch.setattr(xtap_core, 'load_seen_ids',
+                            lambda d: (calls.append(d), orig_load(d))[1])
+        seen_by_dir = {}
+        result, _ = xtap_core.resolve_output_dir(custom, '/default', seen_by_dir)
+        assert result in seen_by_dir
+        # Second call — already loaded, load_seen_ids not called again
+        xtap_core.resolve_output_dir(custom, '/default', seen_by_dir)
+        assert len(calls) == 1
 
     def test_tilde_expansion(self, tmp_path):
-        seen = set()
-        custom_dirs = set()
-        result = xtap_core.resolve_output_dir('~/xtap-test-dir', '/default', seen, custom_dirs)
+        result, _ = xtap_core.resolve_output_dir('~/xtap-test-dir', '/default', {})
         expected = os.path.expanduser('~/xtap-test-dir')
         assert result == expected
         # Clean up
@@ -211,9 +209,7 @@ class TestResolveOutputDir:
         (tmp_path / 'custom' / 'tweets-2024-01-15.jsonl').write_text(
             json.dumps({'id': '999'}) + '\n'
         )
-        seen = set()
-        custom_dirs = set()
-        xtap_core.resolve_output_dir(custom, '/default', seen, custom_dirs)
+        _, seen = xtap_core.resolve_output_dir(custom, '/default', {})
         assert '999' in seen
 
 
@@ -250,7 +246,7 @@ class TestValidateOutputDir:
 
     def test_resolve_output_dir_rejects_traversal(self):
         with pytest.raises(ValueError, match='outside allowed directories'):
-            xtap_core.resolve_output_dir('/etc/evil', '/default', set(), set())
+            xtap_core.resolve_output_dir('/etc/evil', '/default', {})
 
     def test_default_output_dir_allowed(self):
         result = xtap_core.validate_output_dir(xtap_core.DEFAULT_OUTPUT_DIR)
@@ -1139,3 +1135,172 @@ class TestImageDownloaderSingleton:
         b = xtap_core.get_image_downloader()
         assert a is b
         xtap_core.reset_image_downloader()
+
+
+# ---------------------------------------------------------------------------
+# write_tweets — failure atomicity (seen_ids must not be poisoned)
+# ---------------------------------------------------------------------------
+
+
+class TestWriteTweetsFailureAtomicity:
+    def test_failed_batch_does_not_poison_seen_ids(self, tmp_path):
+        """If writing a batch raises, none of its IDs may be committed to
+        seen_ids — otherwise the extension's retry of the same batch is
+        counted as all-dupes and the tweets are silently lost."""
+        seen = set()
+        bad_batch = [
+            {'id': '1', 'text': 'fine'},
+            {'id': '2', 'text': {'not', 'serializable'}},  # json.dumps raises
+        ]
+        with pytest.raises(TypeError):
+            xtap_core.write_tweets(bad_batch, str(tmp_path), seen)
+
+        # The retry (same IDs, now serializable) must be written, not deduped.
+        count, dupes = xtap_core.write_tweets(
+            [{'id': '1', 'text': 'fine'}, {'id': '2', 'text': 'fixed'}],
+            str(tmp_path), seen)
+        assert count == 2
+        assert dupes == 0
+        files = list(tmp_path.glob('tweets-*.jsonl'))
+        ids = [json.loads(line)['id']
+               for line in files[0].read_text(encoding='utf-8').strip().split('\n')]
+        assert '2' in ids
+
+    def test_same_id_twice_in_one_batch_deduped(self, tmp_path):
+        seen = set()
+        count, dupes = xtap_core.write_tweets(
+            [{'id': '1', 'text': 'a'}, {'id': '1', 'text': 'b'}],
+            str(tmp_path), seen)
+        assert count == 1
+        assert dupes == 1
+
+    def test_successful_batch_commits_seen_ids(self, tmp_path):
+        seen = set()
+        xtap_core.write_tweets([{'id': '1', 'text': 'a'}], str(tmp_path), seen)
+        assert seen == {'1'}
+
+
+# ---------------------------------------------------------------------------
+# Explicit UTF-8 encoding (Windows runs Python with a cp1252 locale default)
+# ---------------------------------------------------------------------------
+
+
+class TestExplicitUtf8Encoding:
+    """Simulates a non-UTF-8 locale by defaulting text-mode open() calls that
+    lack an explicit encoding= to cp1252 — the behavior of Python <= 3.15 on
+    Windows, where emoji in tweets raise UnicodeEncodeError unless every
+    open() passes encoding='utf-8'."""
+
+    @pytest.fixture(autouse=True)
+    def _cp1252_default_open(self, monkeypatch):
+        real_open = builtins.open
+        def cp1252_open(file, mode='r', *args, **kwargs):
+            if 'b' not in mode and kwargs.get('encoding') is None:
+                kwargs['encoding'] = 'cp1252'
+            return real_open(file, mode, *args, **kwargs)
+        monkeypatch.setattr(builtins, 'open', cp1252_open)
+
+    def test_write_tweets_emoji(self, tmp_path):
+        seen = set()
+        count, _ = xtap_core.write_tweets(
+            [{'id': '1', 'text': 'Hello \U0001f30d'}], str(tmp_path), seen)
+        assert count == 1
+        files = list(tmp_path.glob('tweets-*.jsonl'))
+        assert '\U0001f30d' in files[0].read_text(encoding='utf-8')
+
+    def test_load_seen_ids_emoji(self, tmp_path):
+        (tmp_path / 'tweets-2024-01-15.jsonl').write_text(
+            json.dumps({'id': '1', 'text': '\U0001f30d'}, ensure_ascii=False) + '\n',
+            encoding='utf-8')
+        assert xtap_core.load_seen_ids(str(tmp_path)) == {'1'}
+
+    def test_write_log_emoji(self, tmp_path):
+        assert xtap_core.write_log(['line \U0001f30d'], str(tmp_path)) == 1
+        logs = list(tmp_path.glob('debug-*.log'))
+        assert '\U0001f30d' in logs[0].read_text(encoding='utf-8')
+
+    def test_write_dump_emoji(self, tmp_path):
+        xtap_core.write_dump('d.json', '{"x": "\U0001f30d"}', str(tmp_path))
+        assert '\U0001f30d' in (tmp_path / 'd.json').read_text(encoding='utf-8')
+
+
+# ---------------------------------------------------------------------------
+# load_seen_ids — robustness (daemon calls this at startup; a crash loops)
+# ---------------------------------------------------------------------------
+
+
+class TestLoadSeenIdsRobustness:
+    def test_undecodable_file_does_not_crash(self, tmp_path):
+        (tmp_path / 'tweets-2024-01-14.jsonl').write_bytes(b'\xff\xfe\x00garbage\n')
+        (tmp_path / 'tweets-2024-01-15.jsonl').write_text(
+            json.dumps({'id': '111'}) + '\n', encoding='utf-8')
+        assert xtap_core.load_seen_ids(str(tmp_path)) == {'111'}
+
+    def test_glob_metacharacters_in_dir_name(self, tmp_path):
+        d = tmp_path / 'xtap [archive]'
+        d.mkdir()
+        (d / 'tweets-2024-01-15.jsonl').write_text(
+            json.dumps({'id': '111'}) + '\n', encoding='utf-8')
+        assert xtap_core.load_seen_ids(str(d)) == {'111'}
+
+    def test_icloud_placeholder_warns(self, tmp_path, capsys):
+        """Evicted iCloud files become hidden .name.icloud placeholders that
+        the glob misses — dedup silently degrades. At minimum warn."""
+        (tmp_path / '.tweets-2024-01-15.jsonl.icloud').write_bytes(b'')
+        xtap_core.load_seen_ids(str(tmp_path))
+        assert 'icloud' in capsys.readouterr().err.lower()
+
+
+# ---------------------------------------------------------------------------
+# Per-directory dedup (switching outputDir must not suppress tweets)
+# ---------------------------------------------------------------------------
+
+
+class TestPerDirectoryDedup:
+    """seen-ID sets are scoped per output directory: pointing the extension
+    at a new directory must re-write tweets there even if they were already
+    captured into the old directory."""
+
+    def test_new_dir_gets_tweets_already_in_default(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(xtap_core, '_ALLOWED_ROOTS', (os.path.realpath(str(tmp_path)),))
+        default = str(tmp_path / 'default')
+        os.makedirs(default)
+        seen_by_dir = {default: set()}
+
+        out, seen = xtap_core.resolve_output_dir('', default, seen_by_dir)
+        assert out == default
+        xtap_core.write_tweets([{'id': '1', 'text': 'a'}], out, seen)
+
+        custom = str(tmp_path / 'custom')
+        out2, seen2 = xtap_core.resolve_output_dir(custom, default, seen_by_dir)
+        count, dupes = xtap_core.write_tweets([{'id': '1', 'text': 'a'}], out2, seen2)
+        assert count == 1
+        assert dupes == 0
+
+    def test_dedup_still_applies_within_each_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(xtap_core, '_ALLOWED_ROOTS', (os.path.realpath(str(tmp_path)),))
+        default = str(tmp_path / 'default')
+        os.makedirs(default)
+        seen_by_dir = {default: set()}
+        custom = str(tmp_path / 'custom')
+
+        for _ in range(2):
+            out, seen = xtap_core.resolve_output_dir(custom, default, seen_by_dir)
+            count, dupes = xtap_core.write_tweets([{'id': '1', 'text': 'a'}], out, seen)
+        assert count == 0
+        assert dupes == 1
+
+    def test_existing_ids_loaded_per_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(xtap_core, '_ALLOWED_ROOTS', (os.path.realpath(str(tmp_path)),))
+        default = str(tmp_path / 'default')
+        os.makedirs(default)
+        custom = tmp_path / 'custom'
+        custom.mkdir()
+        (custom / 'tweets-2024-01-15.jsonl').write_text(
+            json.dumps({'id': '999'}) + '\n', encoding='utf-8')
+        seen_by_dir = {default: set()}
+
+        out, seen = xtap_core.resolve_output_dir(str(custom), default, seen_by_dir)
+        count, dupes = xtap_core.write_tweets([{'id': '999', 'text': 'a'}], out, seen)
+        assert count == 0
+        assert dupes == 1

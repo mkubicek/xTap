@@ -32,6 +32,16 @@ def read_exact(stream, size):
     return buf
 
 
+def drain_exact(stream, size):
+    """Discard exactly *size* bytes so the next frame starts at a boundary."""
+    remaining = size
+    while remaining > 0:
+        chunk = stream.read(min(65536, remaining))
+        if not chunk:
+            raise EOFError('unexpected end of stream')
+        remaining -= len(chunk)
+
+
 def read_message():
     try:
         header = read_exact(sys.stdin.buffer, 4)
@@ -39,6 +49,10 @@ def read_message():
         raise EOFError('stdin closed')
     length = struct.unpack('<I', header)[0]
     if length > MAX_MESSAGE_BYTES:
+        # Drain the payload before raising — leaving it in the pipe would make
+        # the next read interpret payload bytes as a length header, and the
+        # stream would never realign.
+        drain_exact(sys.stdin.buffer, length)
         raise ValueError(f'message too large: {length} bytes')
     data = read_exact(sys.stdin.buffer, length)
     return json.loads(data)
@@ -63,7 +77,7 @@ def _main():
 
         if msg.get('type') == 'GET_TOKEN':
             try:
-                with open(XTAP_SECRET, 'r') as f:
+                with open(XTAP_SECRET, 'r', encoding='utf-8') as f:
                     token = f.read().strip()
                 send_message({'ok': True, 'token': token, 'port': XTAP_PORT})
             except FileNotFoundError:
@@ -83,7 +97,7 @@ def main():
         _main()
     except Exception:
         os.makedirs(XTAP_DIR, exist_ok=True)
-        with open(XTAP_ERROR_LOG, 'a') as f:
+        with open(XTAP_ERROR_LOG, 'a', encoding='utf-8') as f:
             f.write(f'\n--- {datetime.now().isoformat()} ---\n')
             f.write(f'Python: {sys.version}\n')
             f.write(f'Script: {os.path.abspath(__file__)}\n')

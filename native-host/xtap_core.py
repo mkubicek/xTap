@@ -51,59 +51,87 @@ def validate_output_dir(path):
 def load_seen_ids(out_dir):
     """Build a set of tweet IDs from all existing JSONL files in the output directory."""
     seen = set()
-    for path in glob.glob(os.path.join(out_dir, 'tweets-*.jsonl')):
-        with open(path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    tweet_id = json.loads(line).get('id')
-                    if tweet_id:
-                        seen.add(tweet_id)
-                except (json.JSONDecodeError, KeyError):
-                    continue
+    escaped_dir = glob.escape(out_dir)
+    # Files evicted by iCloud ("Optimize Mac Storage") become hidden
+    # .name.icloud placeholders the glob below can't read — dedup silently
+    # loses their IDs, so at least make the degradation visible.
+    placeholders = glob.glob(os.path.join(escaped_dir, '.tweets-*.jsonl.icloud'))
+    if placeholders:
+        names = ', '.join(os.path.basename(p) for p in placeholders[:5])
+        print(f'[xtap] WARNING: {len(placeholders)} tweets file(s) evicted by '
+              f'iCloud — their IDs cannot be deduplicated against: {names}',
+              file=sys.stderr)
+    for path in glob.glob(os.path.join(escaped_dir, 'tweets-*.jsonl')):
+        try:
+            # errors='replace': a corrupt file must not crash the daemon at
+            # startup — unreadable lines just fail JSON parsing and are skipped.
+            with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        tweet_id = json.loads(line).get('id')
+                        if tweet_id:
+                            seen.add(tweet_id)
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+        except OSError as e:
+            print(f'[xtap] WARNING: cannot read {path}: {e}', file=sys.stderr)
     return seen
 
 
-def resolve_output_dir(msg_dir, default_dir, seen_ids, custom_dirs):
-    """Resolve output directory from message, loading seen IDs for new custom dirs.
+def resolve_output_dir(msg_dir, default_dir, seen_ids_by_dir):
+    """Resolve output directory from message, scoping seen IDs per directory.
 
-    Returns the resolved output directory path.
+    seen_ids_by_dir maps out_dir -> set of tweet IDs already written there.
+    Per-directory scoping matters: after switching to a new output directory,
+    tweets already captured into the old one must still be written to the new
+    archive (a shared set would silently suppress them).
+
+    Returns (out_dir, seen_ids) for the resolved directory.
     """
     if msg_dir:
         out_dir = validate_output_dir(os.path.expanduser(msg_dir))
         os.makedirs(out_dir, exist_ok=True)
-        if out_dir != default_dir and out_dir not in custom_dirs:
-            seen_ids.update(load_seen_ids(out_dir))
-            custom_dirs.add(out_dir)
     else:
         out_dir = default_dir
-    return out_dir
+    if out_dir not in seen_ids_by_dir:
+        seen_ids_by_dir[out_dir] = load_seen_ids(out_dir)
+    return out_dir, seen_ids_by_dir[out_dir]
 
 
 def write_tweets(tweets, out_dir, seen_ids):
-    """Write tweets to JSONL, deduplicating against seen_ids. Returns (count, dupes)."""
+    """Write tweets to JSONL, deduplicating against seen_ids. Returns (count, dupes).
+
+    seen_ids is committed only after the file has been flushed and closed —
+    if the write fails, the extension retries the batch, and pre-committed IDs
+    would make the retry look like all-duplicates (silent data loss). A partial
+    flush before a failure can yield duplicate lines on retry; duplicates are
+    recoverable, dropped tweets are not.
+    """
     out_file = os.path.join(out_dir, f'tweets-{date.today().isoformat()}.jsonl')
     count = 0
     dupes = 0
-    with open(out_file, 'a') as f:
+    written_ids = set()
+    with open(out_file, 'a', encoding='utf-8') as f:
         for tweet in tweets:
             tid = tweet.get('id')
-            if tid and tid in seen_ids and not tweet.get('is_article'):
+            if tid and (tid in seen_ids or tid in written_ids) and not tweet.get('is_article'):
                 dupes += 1
                 continue
-            if tid:
-                seen_ids.add(tid)
             f.write(json.dumps(tweet, ensure_ascii=False) + '\n')
+            if tid:
+                written_ids.add(tid)
             count += 1
+    seen_ids |= written_ids
     return count, dupes
 
 
 def write_log(lines, out_dir):
     """Append debug log lines to daily log file. Returns logged count."""
     log_file = os.path.join(out_dir, f'debug-{date.today().isoformat()}.log')
-    with open(log_file, 'a') as f:
+    with open(log_file, 'a', encoding='utf-8') as f:
         for line in lines:
             f.write(line + '\n')
     return len(lines)
@@ -116,7 +144,7 @@ def write_dump(filename, content, out_dir):
     if not safe_name or safe_name in ('.', '..'):
         raise ValueError(f'Invalid dump filename: {filename!r}')
     dump_file = os.path.join(out_dir, safe_name)
-    with open(dump_file, 'w') as f:
+    with open(dump_file, 'w', encoding='utf-8') as f:
         f.write(content)
     return dump_file
 
@@ -126,7 +154,7 @@ def test_path(out_dir):
     os.makedirs(out_dir, exist_ok=True)
     test_file = os.path.join(out_dir, f'.xtap-write-test-{threading.get_ident()}')
     try:
-        with open(test_file, 'w') as f:
+        with open(test_file, 'w', encoding='utf-8') as f:
             f.write('ok')
     finally:
         try:
@@ -185,7 +213,11 @@ def download_direct(direct_url, tweet_id, video_dir, post_date=''):  # pragma: n
     filename = f'{prefix}{tweet_id}.mp4'
     filepath = os.path.join(video_dir, filename)
     tmp_path = filepath + '.part'
-    urllib.request.urlretrieve(direct_url, tmp_path)
+    # Socket-level timeout so a stalled CDN connection can't hang the
+    # download thread (and the popup's polling) forever.
+    with urllib.request.urlopen(direct_url, timeout=60) as resp, \
+            open(tmp_path, 'wb') as f:
+        shutil.copyfileobj(resp, f)
     os.replace(tmp_path, filepath)
     return filepath
 
@@ -671,7 +703,7 @@ class ImageDownloader:
         manifest_path = os.path.join(out_dir, 'media-manifest.jsonl')
         try:
             os.makedirs(out_dir, exist_ok=True)
-            with open(manifest_path, 'a') as f:
+            with open(manifest_path, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + '\n')
         except OSError as e:
             print(f'[xtap:image] manifest write failed: {e}', file=sys.stderr)
