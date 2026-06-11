@@ -184,11 +184,20 @@ const _origLog = console.log;
 const _origWarn = console.warn;
 const _origError = console.error;
 
+const MAX_LOG_BUFFER = 5000;
+
 function debugLog(level, args) {
   if (!debugLogging) return;
   const ts = new Date().toISOString();
-  const text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+  const text = args.map(a => {
+    if (typeof a === 'string') return a;
+    try { return JSON.stringify(a); } catch { return String(a); }
+  }).join(' ');
   logBuffer.push(`${ts} [${level}] ${text}`);
+  // Cap so an unreachable daemon can't grow the buffer unboundedly.
+  if (logBuffer.length > MAX_LOG_BUFFER) {
+    logBuffer.splice(0, logBuffer.length - MAX_LOG_BUFFER);
+  }
 }
 
 console.log = (...args) => { _origLog(...args); debugLog('LOG', args); };
@@ -212,7 +221,7 @@ async function httpFetch(method, path, body) {
   opts.signal = controller.signal;
   try {
     const resp = await fetch(url, opts);
-    return await resp.json();
+    return { status: resp.status, data: await resp.json() };
   } finally {
     clearTimeout(timeout);
   }
@@ -290,6 +299,7 @@ async function initTransport() {
       httpToken = cached.httpToken;
       httpPort = cached.httpPort;
       transport = 'http';
+      updateBadge(); // clear a stale '!' from a previous daemon-down session
       console.log('[xTap] Using HTTP transport (cached token)');
       return;
     }
@@ -304,6 +314,7 @@ async function initTransport() {
       httpPort = result.port;
       transport = 'http';
       await chrome.storage.local.set({ httpToken, httpPort });
+      updateBadge(); // clear a stale '!' from a previous daemon-down session
       console.log('[xTap] Using HTTP transport (token from native host)');
       return;
     }
@@ -353,7 +364,18 @@ async function sendToHost(msg) {
   }
 
   try {
-    return await httpFetch('POST', path, body);
+    const { status, data } = await httpFetch('POST', path, body);
+    if (status === 401 || status === 403) {
+      // The daemon is alive but our token is stale (e.g. rotated by a
+      // reinstall). Reset the transport so the next flush re-probes and
+      // fetches a fresh token via the native host — otherwise we'd retry
+      // the same dead credentials forever.
+      console.error(`[xTap] Daemon rejected credentials (HTTP ${status}), resetting transport`);
+      transport = 'none';
+      updateTransportBadge();
+      return null;
+    }
+    return data;
   } catch (e) {
     console.error('[xTap] HTTP send failed:', e.message);
     transport = 'none';
@@ -367,6 +389,31 @@ async function sendToHost(msg) {
 function scheduledFlush() {
   if (buffer.length > 0 || logBuffer.length > 0) flush();
 }
+
+// The setTimeout flush timer dies with the service worker (MV3 kills it ~30s
+// after the last event), stranding the final partial batch until a later
+// session. A chrome.alarms backstop survives SW termination and wakes the SW
+// to deliver whatever is still buffered, then clears itself.
+const FLUSH_ALARM = 'xtap-flush';
+let flushAlarmSet = false;
+
+function ensureFlushAlarm() {
+  if (flushAlarmSet || !chrome.alarms) return;
+  flushAlarmSet = true;
+  chrome.alarms.create(FLUSH_ALARM, { periodInMinutes: 1 });
+}
+
+chrome.alarms?.onAlarm.addListener((alarm) => {
+  if (alarm.name !== FLUSH_ALARM) return;
+  (async () => {
+    await ready;
+    if (buffer.length > 0 || logBuffer.length > 0) await flush();
+    if (buffer.length === 0 && logBuffer.length === 0) {
+      chrome.alarms.clear(FLUSH_ALARM);
+      flushAlarmSet = false;
+    }
+  })();
+});
 
 async function flushLogs() {
   if (logBuffer.length === 0) return;
@@ -426,6 +473,11 @@ async function reprobeTransport() {
   return false;
 }
 
+// Cap per POST so a backlog (e.g. after a daemon outage) can't exceed the
+// daemon's 10 MB body limit and wedge in a 413-retry loop.
+const MAX_TWEETS_PER_POST = 200;
+let flushInFlight = false;
+
 async function flush() {
   if (buffer.length === 0 && logBuffer.length === 0) return;
 
@@ -433,25 +485,31 @@ async function flush() {
     if (!(await reprobeTransport())) return;
   }
 
-  if (buffer.length > 0) {
-    const batch = buffer.splice(0);
-    const message = { tweets: batch };
-    if (outputDir) message.outputDir = outputDir;
-    if (imageDownload) message.imageDownload = true;
-
+  if (buffer.length > 0 && !flushInFlight) {
+    flushInFlight = true;
     try {
-      const resp = await sendToHost(message);
-      if (!resp || !resp.ok) {
-        console.error('[xTap] Host rejected tweets:', resp?.error || 'no response');
-        buffer.unshift(...batch);
-        await saveState();
-      } else {
+      // Send from the front without removing — the batch stays in `buffer`
+      // (and thus in persisted state) until the daemon acks, so SW death
+      // mid-POST can't lose it. The daemon dedups by ID, so a death after
+      // the POST but before the ack only costs a duplicate send, not data.
+      while (buffer.length > 0) {
+        const batch = buffer.slice(0, MAX_TWEETS_PER_POST);
+        const message = { tweets: batch };
+        if (outputDir) message.outputDir = outputDir;
+        if (imageDownload) message.imageDownload = true;
+
+        const resp = await sendToHost(message);
+        if (!resp || !resp.ok) {
+          // Batch stays buffered for the next flush.
+          console.error('[xTap] Host rejected tweets:', resp?.error || 'no response');
+          break;
+        }
+        const sent = new Set(batch);
+        buffer = buffer.filter(t => !sent.has(t));
         await saveState();
       }
-    } catch (e) {
-      console.error('[xTap] Send failed, buffering tweets back:', e);
-      buffer.unshift(...batch);
-      await saveState();
+    } finally {
+      flushInFlight = false;
     }
   }
 
@@ -517,6 +575,7 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
   sessionCount += newCount;
   allTimeCount += newCount;
   updateBadge();
+  if (newCount > 0) ensureFlushAlarm();
 
   if (buffer.length > MAX_BUFFER_SIZE) {
     const overflow = buffer.length - MAX_BUFFER_SIZE;
@@ -815,8 +874,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           type: 'DOWNLOAD_STATUS',
           downloadId: msg.downloadId,
         });
-        // Clean up finished downloads from active map
-        if (resp?.status === 'done' || resp?.status === 'error') {
+        // Clean up finished downloads from active map. 'unknown' means the
+        // daemon restarted and lost the download — stop resuming it.
+        if (resp?.status === 'done' || resp?.status === 'error' || resp?.status === 'unknown') {
           for (const [tid, did] of activeDownloads) {
             if (did === msg.downloadId) { activeDownloads.delete(tid); break; }
           }
@@ -845,6 +905,12 @@ restoreState().catch((e) => {
   readyResolve();
   updateBadge();
   await initTransport();
+  // Deliver anything restored/recovered right away — the SW may idle out
+  // before the first timer tick, and nothing else flushes at startup.
+  if (buffer.length > 0) {
+    ensureFlushAlarm();
+    flush();
+  }
   function scheduleNextFlush() {
     const jitter = Math.random() * FLUSH_INTERVAL_MS * 0.5;
     flushTimer = setTimeout(() => { scheduledFlush(); scheduleNextFlush(); }, FLUSH_INTERVAL_MS + jitter);

@@ -5,7 +5,8 @@
   "description": "Passively captures tweets from X/Twitter as you browse",
   "permissions": [
     "storage",
-    "nativeMessaging"
+    "nativeMessaging",
+    "alarms"
   ],
   "host_permissions": [
     "*://*.x.com/*",

@@ -1,0 +1,298 @@
+/**
+ * Tests for transport failure handling and flush in-flight durability.
+ * Run with: node --test tests/transport-flush.test.mjs
+ *
+ * Evaluates background.js in a vm context with mocked chrome APIs
+ * (same rig as staging-wal.test.mjs).
+ */
+
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import { dedupTweet } from '../lib/dedup.js';
+
+const bgSource = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
+
+// Strip ESM imports and init block; expose internals via var (added to sandbox)
+const testSource = bgSource
+  .replace(/^import\b.*$/gm, '')
+  .replace(/\/\/ --- Init ---[\s\S]*$/,
+    `var _internals = {
+      flush, sendToHost, saveState, enqueueTweets,
+      readyResolve,
+      get buffer() { return buffer; },
+      set buffer(v) { buffer = v; },
+      get seenIds() { return seenIds; },
+      set seenIds(v) { seenIds = v; },
+      get transport() { return transport; },
+      set transport(v) { transport = v; },
+      set httpToken(v) { httpToken = v; },
+      set httpPort(v) { httpPort = v; },
+    };`
+  );
+
+function createMockStorage() {
+  let data = {};
+  return {
+    get(keys) {
+      if (keys === null) return Promise.resolve({ ...data });
+      const result = {};
+      const list = Array.isArray(keys) ? keys : [keys];
+      for (const k of list) if (k in data) result[k] = data[k];
+      return Promise.resolve(result);
+    },
+    set(items) {
+      Object.assign(data, items);
+      return Promise.resolve();
+    },
+    remove(keys) {
+      const list = Array.isArray(keys) ? keys : [keys];
+      for (const k of list) delete data[k];
+      return Promise.resolve();
+    },
+    setAccessLevel() { return Promise.resolve(); },
+  };
+}
+
+function okResponse(body = { ok: true }, status = 200) {
+  return { ok: status < 400, status, json: async () => body };
+}
+
+function tick() {
+  return new Promise(r => setTimeout(r, 0));
+}
+
+function setup() {
+  const sessionStore = createMockStorage();
+  const localStore = createMockStorage();
+  const fetchHolder = {
+    impl: async () => okResponse(),
+  };
+  const alarms = {
+    created: [],
+    cleared: [],
+    listener: null,
+    create(name, info) { this.created.push({ name, info }); },
+    clear(name) { this.cleared.push(name); },
+    onAlarm: null, // set below so addListener can reach `alarms`
+  };
+  alarms.onAlarm = { addListener: (fn) => { alarms.listener = fn; } };
+
+  const sandbox = {
+    console: { log() {}, warn() {}, error() {} },
+    setTimeout: globalThis.setTimeout,
+    clearTimeout: globalThis.clearTimeout,
+    AbortController: globalThis.AbortController,
+    AbortSignal: globalThis.AbortSignal,
+    fetch: (...args) => fetchHolder.impl(...args),
+    extractTweets: () => [],
+    dedupTweet,
+    chrome: {
+      runtime: {
+        getManifest: () => ({}), // no update_url → isDevMode = true
+        connectNative() { throw new Error('not available'); },
+        onMessage: { addListener() {} },
+        lastError: null,
+      },
+      storage: {
+        session: sessionStore,
+        local: localStore,
+      },
+      action: {
+        setBadgeText() {},
+        setBadgeBackgroundColor() {},
+      },
+      alarms,
+    },
+  };
+
+  vm.runInNewContext(testSource, sandbox);
+
+  const env = sandbox._internals;
+  env.sessionStore = sessionStore;
+  env.localStore = localStore;
+  env.fetchHolder = fetchHolder;
+  env.alarms = alarms;
+  return env;
+}
+
+// ---------------------------------------------------------------------------
+// Daemon rejection handling
+// ---------------------------------------------------------------------------
+
+describe('daemon rejection handling', () => {
+  it('a 401 response resets transport so credentials are re-probed', async () => {
+    const env = setup();
+    env.transport = 'http';
+    env.httpToken = 'stale-token';
+    env.httpPort = 17381;
+    // Daemon answers with valid JSON but HTTP 401 (token rotated by reinstall)
+    env.fetchHolder.impl = async () => okResponse({ ok: false, error: 'Unauthorized' }, 401);
+    env.buffer = [{ id: '1', text: 'one' }];
+
+    await env.flush();
+
+    assert.equal(env.buffer.length, 1, 'batch must be preserved for retry');
+    assert.equal(env.transport, 'none',
+      'transport must reset on auth failure — otherwise flush retries the same '
+      + 'stale token forever and never refreshes via the native host');
+  });
+
+  it('a 500 response keeps the batch and keeps the transport', async () => {
+    const env = setup();
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    env.fetchHolder.impl = async () => okResponse({ ok: false, error: 'disk full' }, 500);
+    env.buffer = [{ id: '1', text: 'one' }];
+
+    await env.flush();
+
+    assert.equal(env.buffer.length, 1);
+    // Daemon is alive (it answered) — a transient server error is not a
+    // transport failure, so no costly reprobe cycle.
+    assert.equal(env.transport, 'http');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Flush in-flight durability
+// ---------------------------------------------------------------------------
+
+describe('flush in-flight durability', () => {
+  it('keeps the in-flight batch in persisted state until the daemon acks', async () => {
+    const env = setup();
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    const posted = [];
+    let resolveFetch;
+    env.fetchHolder.impl = (url, opts) => {
+      posted.push(JSON.parse(opts.body).tweets.map(t => t.id));
+      return new Promise(r => { resolveFetch = r; });
+    };
+    env.buffer = [{ id: '1', text: 'one' }];
+
+    const flushP = env.flush();
+    await tick();
+
+    // A concurrent GRAPHQL_RESPONSE handler enqueues + persists while the
+    // POST is in flight (the common case while scrolling).
+    env.enqueueTweets([{ id: '2', text: 'two' }], 'test');
+    await env.saveState();
+
+    // If the SW were killed right now, persisted state must still contain
+    // tweet 1 — its WAL entry was already cleared and seenIds blocks recapture.
+    const persisted = await env.sessionStore.get(null);
+    assert.ok(persisted.tweetBuffer.some(t => t.id === '1'),
+      'in-flight batch missing from persisted buffer — SW death here loses it');
+
+    // Ack the first POST; subsequent POSTs (draining tweet 2) ack immediately.
+    const firstResolve = resolveFetch;
+    env.fetchHolder.impl = (url, opts) => {
+      posted.push(JSON.parse(opts.body).tweets.map(t => t.id));
+      return Promise.resolve(okResponse());
+    };
+    firstResolve(okResponse());
+    await flushP;
+
+    // Drained exactly once each, nothing left behind.
+    assert.deepEqual(posted, [['1'], ['2']]);
+    assert.equal(env.buffer.length, 0);
+    const after = await env.sessionStore.get(null);
+    assert.deepEqual(after.tweetBuffer, []);
+  });
+
+  it('does not double-send when flush is invoked concurrently', async () => {
+    const env = setup();
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    let calls = 0;
+    const resolvers = [];
+    env.fetchHolder.impl = () => { calls++; return new Promise(r => resolvers.push(r)); };
+    env.buffer = [{ id: '1', text: 'one' }];
+
+    const p1 = env.flush();
+    await tick();
+    const p2 = env.flush();
+    await tick();
+
+    assert.equal(calls, 1, 'second flush must not re-send the in-flight batch');
+
+    resolvers.forEach(r => r(okResponse()));
+    await p1;
+    await p2;
+    assert.equal(env.buffer.length, 0);
+  });
+
+  it('keeps buffer order when the send fails mid-scroll', async () => {
+    const env = setup();
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    let rejectFetch;
+    env.fetchHolder.impl = () => new Promise((_, rej) => { rejectFetch = rej; });
+    env.buffer = [{ id: '1', text: 'one' }];
+
+    const flushP = env.flush();
+    await tick();
+    env.enqueueTweets([{ id: '2', text: 'two' }], 'test');
+
+    rejectFetch(new Error('connection refused'));
+    await flushP;
+
+    assert.deepEqual(env.buffer.map(t => t.id), ['1', '2']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Flush alarm (MV3: setTimeout dies with the SW; chrome.alarms survives)
+// ---------------------------------------------------------------------------
+
+describe('flush alarm', () => {
+  it('schedules an alarm when tweets are buffered', () => {
+    const env = setup();
+    env.enqueueTweets([{ id: '1', text: 'one' }], 'test');
+    assert.ok(env.alarms.created.some(a => a.name === 'xtap-flush'),
+      'buffered tweets need a chrome.alarms backstop — the setTimeout flush '
+      + 'timer dies with the service worker');
+  });
+
+  it('the alarm listener flushes the restored buffer', async () => {
+    const env = setup();
+    env.readyResolve();
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    let calls = 0;
+    env.fetchHolder.impl = async () => { calls++; return okResponse(); };
+    env.buffer = [{ id: '1', text: 'one' }];
+
+    assert.ok(env.alarms.listener, 'no onAlarm listener registered at top level');
+    env.alarms.listener({ name: 'xtap-flush' });
+    await tick();
+    await tick();
+
+    assert.equal(calls, 1, 'alarm did not trigger a flush');
+    assert.equal(env.buffer.length, 0);
+  });
+
+  it('the alarm listener clears the alarm once the buffer is drained', async () => {
+    const env = setup();
+    env.readyResolve();
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    env.buffer = [];
+
+    assert.ok(env.alarms.listener, 'no onAlarm listener registered at top level');
+    env.alarms.listener({ name: 'xtap-flush' });
+    await tick();
+    await tick();
+
+    assert.ok(env.alarms.cleared.includes('xtap-flush'),
+      'a drained buffer must clear the alarm so the SW stops being woken');
+  });
+});

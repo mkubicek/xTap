@@ -27,8 +27,10 @@
       meta.remove(); // Clean up — no trace left in DOM
       start(eventName);
     } else {
-      // MAIN world script hasn't run yet, retry
-      requestAnimationFrame(findBeacon);
+      // MAIN world script hasn't run yet, retry. setTimeout, not rAF —
+      // rAF callbacks never fire in hidden/background tabs, which would
+      // drop every event until the tab becomes visible.
+      setTimeout(findBeacon, 50);
     }
   }
 
