@@ -16,7 +16,11 @@ from datetime import date, datetime, timezone
 from urllib.parse import urlparse
 
 
-DEFAULT_OUTPUT_DIR = os.environ.get('XTAP_OUTPUT_DIR', os.path.expanduser('~/Downloads/xtap'))
+# realpath so the default dir and an explicit outputDir naming the same
+# physical directory (e.g. via a symlinked home) share one seen-ID set —
+# resolve_output_dir keys per-directory state by this string.
+DEFAULT_OUTPUT_DIR = os.path.realpath(
+    os.environ.get('XTAP_OUTPUT_DIR', os.path.expanduser('~/Downloads/xtap')))
 
 # Allowed roots for outputDir validation: user's home + DEFAULT_OUTPUT_DIR
 # (the latter covers XTAP_OUTPUT_DIR pointing outside home, e.g. /data/xtap)
@@ -206,8 +210,15 @@ def _date_prefix(post_date):
         return ''
 
 
-def download_direct(direct_url, tweet_id, video_dir, post_date=''):  # pragma: no cover
+def download_direct(direct_url, tweet_id, video_dir, post_date=''):
     """Download video via direct CDN URL. Returns the file path."""
+    # Same trust boundary as the image downloader: only fetch from Twitter's
+    # CDN over https — the URL crosses the daemon's HTTP API and must not be
+    # able to point the daemon at file:// or internal hosts.
+    parsed = urlparse(direct_url)
+    host = (parsed.hostname or '').lower()
+    if parsed.scheme != 'https' or not (host == 'twimg.com' or host.endswith('.twimg.com')):
+        raise ValueError(f'direct URL not allowed: {direct_url!r}')
     os.makedirs(video_dir, exist_ok=True)
     prefix = _date_prefix(post_date)
     filename = f'{prefix}{tweet_id}.mp4'

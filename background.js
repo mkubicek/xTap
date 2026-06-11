@@ -375,6 +375,7 @@ async function sendToHost(msg) {
       updateTransportBadge();
       return null;
     }
+    if (data && typeof data === 'object') data.httpStatus = status;
     return data;
   } catch (e) {
     console.error('[xTap] HTTP send failed:', e.message);
@@ -492,15 +493,33 @@ async function flush() {
       // (and thus in persisted state) until the daemon acks, so SW death
       // mid-POST can't lose it. The daemon dedups by ID, so a death after
       // the POST but before the ack only costs a duplicate send, not data.
+      let postCap = MAX_TWEETS_PER_POST;
       while (buffer.length > 0) {
-        const batch = buffer.slice(0, MAX_TWEETS_PER_POST);
+        const batch = buffer.slice(0, postCap);
         const message = { tweets: batch };
         if (outputDir) message.outputDir = outputDir;
         if (imageDownload) message.imageDownload = true;
 
         const resp = await sendToHost(message);
         if (!resp || !resp.ok) {
-          // Batch stays buffered for the next flush.
+          // 413: the batch is too large in bytes (count cap doesn't bound
+          // huge article tweets). Retrying it unchanged would wedge the
+          // queue forever — halve and retry; a single tweet that alone
+          // exceeds the daemon's body limit can never be delivered, so
+          // drop it with a trace event.
+          if (resp?.httpStatus === 413) {
+            if (batch.length > 1) {
+              postCap = Math.max(1, Math.floor(batch.length / 2));
+              continue;
+            }
+            const oversized = batch[0];
+            buffer = buffer.filter(t => t !== oversized);
+            console.error(`[xTap] Dropping tweet ${oversized.id}: exceeds daemon body limit`);
+            emitTraceEvent({ timestamp: Date.now(), endpoint: 'flush', tweetId: oversized.id, status: 'DROPPED_OVERSIZED', reason: 'single tweet exceeds daemon body limit' });
+            await saveState();
+            continue;
+          }
+          // Anything else: batch stays buffered for the next flush.
           console.error('[xTap] Host rejected tweets:', resp?.error || 'no response');
           break;
         }
@@ -907,8 +926,8 @@ restoreState().catch((e) => {
   await initTransport();
   // Deliver anything restored/recovered right away — the SW may idle out
   // before the first timer tick, and nothing else flushes at startup.
-  if (buffer.length > 0) {
-    ensureFlushAlarm();
+  if (buffer.length > 0 || logBuffer.length > 0) {
+    if (buffer.length > 0) ensureFlushAlarm();
     flush();
   }
   function scheduleNextFlush() {

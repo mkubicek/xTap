@@ -102,7 +102,7 @@ Even though passive interception is inherently low-risk, xTap avoids leaving unn
 - **Random event channel** — the MAIN↔ISOLATED world bridge uses a `CustomEvent` with a per-page-load random name; the `<meta>` beacon that communicates the name is removed immediately after the bridge reads it
 - **Zero DOM footprint** — no injected UI, no page modifications; everything lives in the popup and service worker
 - **Zero console output in page context** — all logging happens in the service worker and parser, which run outside the page's JavaScript environment
-- **Minimal permissions** — only `storage` and `nativeMessaging`; no `webRequest`, no host permissions beyond `x.com` / `twitter.com` / `127.0.0.1`
+- **Minimal permissions** — only `storage`, `nativeMessaging`, and `alarms` (the alarm wakes the service worker to deliver buffered tweets; it is not observable by web pages); no `webRequest`, no host permissions beyond `x.com` / `twitter.com` / `127.0.0.1`
 - **Jittered flush timing** — batches are flushed on a randomized interval to avoid a clockwork-regular pattern
 
 These measures don't make detection impossible — a determined page script could still compare prototype references or probe for patched behavior — but they avoid the low-hanging signals that fingerprinting scripts typically check. More importantly, there's nothing to detect server-side because xTap generates zero network activity of its own.

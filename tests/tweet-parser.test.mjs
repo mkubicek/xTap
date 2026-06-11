@@ -1085,4 +1085,34 @@ describe('quoted tweet extraction', () => {
     assert.equal(tweets.length, 2);
     assert.ok(tweets.some(t => t.id === '200'));
   });
+
+  it('extracts the quoted tweet carried by a retweeted original', () => {
+    const original = makeRawTweet({
+      rest_id: '300',
+      legacy: { id_str: '300', quoted_status_id_str: '200' },
+      quoted_status_result: { result: makeQuotedRawTweet() },
+    });
+    const rt = makeRawTweet({
+      legacy: { retweeted_status_result: { result: original } },
+    });
+    const tweets = extractTweets('HomeTimeline', makeTimelineResponse(rt));
+    assert.ok(tweets.some(t => t.id === '200'),
+      'quoted payload on the retweeted original was discarded');
+  });
+
+  it('does not emit the quoted tweet twice when wrapper and original both carry it', () => {
+    const original = makeRawTweet({
+      rest_id: '300',
+      legacy: { id_str: '300' },
+      quoted_status_result: { result: makeQuotedRawTweet() },
+    });
+    const rt = makeRawTweet({
+      quoted_status_result: { result: makeQuotedRawTweet() },
+      legacy: { retweeted_status_result: { result: original } },
+    });
+    const tweets = extractTweets('HomeTimeline', makeTimelineResponse(rt));
+    assert.equal(tweets.filter(t => t.id === '200').length, 1,
+      'same quoted tweet must be emitted once per entry');
+  });
 });
+

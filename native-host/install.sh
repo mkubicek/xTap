@@ -180,6 +180,10 @@ if [ "$OS" = "Darwin" ]; then
   # inherit shell exports, so this is the only way XTAP_OUTPUT_DIR reaches
   # the daemon (re-run install.sh after changing it).
   XTAP_OUTPUT_DIR="${XTAP_OUTPUT_DIR:-$HOME/Downloads/xtap}"
+  # XML-escape for the plist, then sed-escape (&, \, |) so paths containing
+  # those characters can't corrupt the substitution or the plist.
+  _OUT_XML=$(printf '%s' "$XTAP_OUTPUT_DIR" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
+  _OUT_SED=$(printf '%s' "$_OUT_XML" | sed -e 's/[\\&|]/\\&/g')
 
   # Substitute plist template
   mkdir -p "$HOME/Library/LaunchAgents"
@@ -189,7 +193,7 @@ if [ "$OS" = "Darwin" ]; then
     -e "s|__HOME_DIR__|${HOME}|g" \
     -e "s|__PATH__|${USER_PATH}|g" \
     -e "s|__LOG_LEVEL__|${XTAP_LOG_LEVEL}|g" \
-    -e "s|__OUTPUT_DIR__|${XTAP_OUTPUT_DIR}|g" \
+    -e "s|__OUTPUT_DIR__|${_OUT_SED}|g" \
     "$PLIST_TEMPLATE" > "$PLIST_DEST"
 
   # Load daemon
@@ -233,8 +237,11 @@ if [ "$OS" = "Linux" ]; then
   XTAP_LOG_LEVEL="${XTAP_LOG_LEVEL:-info}"
   # Bake the output dir into the service environment — systemd does not
   # inherit shell exports, so this is the only way XTAP_OUTPUT_DIR reaches
-  # the daemon (re-run install.sh after changing it).
+  # the daemon (re-run install.sh after changing it). The template quotes the
+  # Environment= value (paths with spaces); escape sed metachars and any
+  # embedded double quotes so the substitution can't corrupt the unit file.
   XTAP_OUTPUT_DIR="${XTAP_OUTPUT_DIR:-$HOME/Downloads/xtap}"
+  _OUT_SED=$(printf '%s' "$XTAP_OUTPUT_DIR" | sed -e 's/[\\&|]/\\&/g' -e 's/"/\\\\"/g')
 
   # Substitute service template
   mkdir -p "$SERVICE_DIR"
@@ -244,12 +251,15 @@ if [ "$OS" = "Linux" ]; then
     -e "s|__HOME_DIR__|${HOME}|g" \
     -e "s|__PATH__|${USER_PATH}|g" \
     -e "s|__LOG_LEVEL__|${XTAP_LOG_LEVEL}|g" \
-    -e "s|__OUTPUT_DIR__|${XTAP_OUTPUT_DIR}|g" \
+    -e "s|__OUTPUT_DIR__|${_OUT_SED}|g" \
     "$SERVICE_TEMPLATE" > "$SERVICE_DEST"
 
   # Reload and enable
   systemctl --user daemon-reload
   systemctl --user enable --now "$SERVICE_NAME"
+  # enable --now does not restart an already-running unit — restart so a
+  # re-install actually applies the freshly baked environment.
+  systemctl --user try-restart "$SERVICE_NAME" 2>/dev/null || true
 
   echo ""
   echo "HTTP daemon installed:"

@@ -21,7 +21,7 @@ from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
 VERSION = '0.23.2'
 BIND_HOST = '127.0.0.1'
 BIND_PORT = int(os.environ.get('XTAP_DAEMON_PORT', 17381))
-MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB (extension caps POSTs via MAX_TWEETS_PER_POST in background.js)
 XTAP_DIR = os.path.expanduser('~/.xtap')
 XTAP_SECRET = os.path.join(XTAP_DIR, 'secret')
 
@@ -328,6 +328,11 @@ def main():
 
     log_info(f'Listening on {BIND_HOST}:{BIND_PORT}')
     server.serve_forever()
+    # Join in-flight handler threads before exiting — they are daemon threads
+    # and would otherwise be killed mid-write at interpreter shutdown,
+    # truncating a JSONL line.
+    server.server_close()
+    log_info('Shutdown complete')
 
 
 if __name__ == '__main__':

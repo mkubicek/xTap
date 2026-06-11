@@ -1,6 +1,7 @@
 """Tests for native-host/xtap_core.py"""
 
 import builtins
+import io
 import json
 import os
 import sys
@@ -1304,3 +1305,43 @@ class TestPerDirectoryDedup:
         count, dupes = xtap_core.write_tweets([{'id': '999', 'text': 'a'}], out, seen)
         assert count == 0
         assert dupes == 1
+
+
+# ---------------------------------------------------------------------------
+# download_direct — URL trust boundary + stall timeout
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadDirect:
+    def test_rejects_non_https_and_non_twimg_urls(self, tmp_path):
+        for url in ('file:///etc/passwd',
+                    'http://127.0.0.1:17381/secret',
+                    'https://evil.example.com/x.mp4',
+                    'https://twimg.com.evil.example/x.mp4'):
+            with pytest.raises(ValueError, match='not allowed'):
+                xtap_core.download_direct(url, '123', str(tmp_path))
+        assert list(tmp_path.iterdir()) == []  # nothing fetched or written
+
+    def test_passes_socket_timeout_and_renames_part(self, tmp_path, monkeypatch):
+        captured = {}
+
+        class FakeResp(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(url, timeout=None):
+            captured['url'] = url
+            captured['timeout'] = timeout
+            return FakeResp(b'video-bytes')
+
+        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen', fake_urlopen)
+        path = xtap_core.download_direct(
+            'https://video.twimg.com/ext_tw_video/1/pu/vid/x.mp4', '42', str(tmp_path))
+        assert captured['timeout'] == 60
+        assert os.path.basename(path) == '42.mp4'
+        with open(path, 'rb') as f:
+            assert f.read() == b'video-bytes'
+        assert not os.path.exists(path + '.part')

@@ -266,3 +266,21 @@ describe('XHR listener stacking — production content-main.js (Bug 2)', () => {
     assert.equal(env.dispatched.length, 0);
   });
 });
+
+describe('XHR stale mapping — GraphQL open followed by non-GraphQL re-open', () => {
+  it('drops the stale mapping so the non-GraphQL response is not dispatched', () => {
+    const env = createBrowserEnv();
+    runInNewContext(contentMainCode, { ...env, console });
+
+    const xhr = new env.XMLHttpRequest();
+    env.XMLHttpRequest.prototype.open.call(
+      xhr, 'GET', 'https://x.com/i/api/graphql/abc/TweetDetail'
+    );
+    env.XMLHttpRequest.prototype.open.call(
+      xhr, 'GET', 'https://x.com/i/api/1.1/jot/client_event.json'
+    );
+    fireLoad(xhr, JSON.stringify({ not: 'graphql' }));
+    assert.equal(env.dispatched.length, 0,
+      'response of a non-GraphQL request must not be dispatched under the stale GraphQL URL');
+  });
+});

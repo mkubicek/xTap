@@ -29,6 +29,7 @@ const testSource = bgSource
       set transport(v) { transport = v; },
       set httpToken(v) { httpToken = v; },
       set httpPort(v) { httpPort = v; },
+      get traceEvents() { return traceEvents; },
     };`
   );
 
@@ -225,6 +226,65 @@ describe('flush in-flight durability', () => {
     await p1;
     await p2;
     assert.equal(env.buffer.length, 0);
+  });
+
+  it('splits a backlog larger than MAX_TWEETS_PER_POST into capped POSTs', async () => {
+    const env = setup();
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    const posted = [];
+    env.fetchHolder.impl = async (url, opts) => {
+      posted.push(JSON.parse(opts.body).tweets.length);
+      return okResponse();
+    };
+    env.buffer = Array.from({ length: 250 }, (_, i) => ({ id: String(i), text: 't' }));
+
+    await env.flush();
+
+    assert.deepEqual(posted, [200, 50], 'backlog must drain in <=200-tweet POSTs');
+    assert.equal(env.buffer.length, 0);
+  });
+
+  it('splits the batch on 413 instead of wedging the queue', async () => {
+    const env = setup();
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    const posted = [];
+    // Daemon accepts at most 2 tweets per POST (simulated byte limit).
+    env.fetchHolder.impl = async (url, opts) => {
+      const n = JSON.parse(opts.body).tweets.length;
+      posted.push(n);
+      if (n > 2) return okResponse({ ok: false, error: 'Payload too large' }, 413);
+      return okResponse();
+    };
+    env.buffer = Array.from({ length: 5 }, (_, i) => ({ id: String(i), text: 't' }));
+
+    await env.flush();
+
+    assert.equal(env.buffer.length, 0, 'queue must drain despite 413s');
+    assert.deepEqual(posted, [5, 2, 2, 1], 'batch must halve on 413, then drain');
+  });
+
+  it('drops a single tweet that alone exceeds the body limit', async () => {
+    const env = setup();
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    env.fetchHolder.impl = async (url, opts) => {
+      const ids = JSON.parse(opts.body).tweets.map(t => t.id);
+      if (ids.includes('huge')) return okResponse({ ok: false, error: 'Payload too large' }, 413);
+      return okResponse();
+    };
+    env.buffer = [{ id: 'huge', text: 'giant article' }, { id: 'normal', text: 'ok' }];
+
+    await env.flush();
+
+    assert.equal(env.buffer.length, 0);
+    const dropped = env.traceEvents.filter(e => e.status === 'DROPPED_OVERSIZED');
+    assert.equal(dropped.length, 1, 'oversized tweet must be dropped with a trace event');
+    assert.equal(dropped[0].tweetId, 'huge');
   });
 
   it('keeps buffer order when the send fails mid-scroll', async () => {
