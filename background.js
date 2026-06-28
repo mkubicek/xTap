@@ -494,6 +494,7 @@ async function flush() {
       // mid-POST can't lose it. The daemon dedups by ID, so a death after
       // the POST but before the ack only costs a duplicate send, not data.
       let postCap = MAX_TWEETS_PER_POST;
+      let splitRemaining = 0;
       while (buffer.length > 0) {
         const batch = buffer.slice(0, postCap);
         const message = { tweets: batch };
@@ -510,12 +511,15 @@ async function flush() {
           if (resp?.httpStatus === 413) {
             if (batch.length > 1) {
               postCap = Math.max(1, Math.floor(batch.length / 2));
+              splitRemaining = batch.length;
               continue;
             }
             const oversized = batch[0];
             buffer = buffer.filter(t => t !== oversized);
             console.error(`[xTap] Dropping tweet ${oversized.id}: exceeds daemon body limit`);
             emitTraceEvent({ timestamp: Date.now(), endpoint: 'flush', tweetId: oversized.id, status: 'DROPPED_OVERSIZED', reason: 'single tweet exceeds daemon body limit' });
+            postCap = MAX_TWEETS_PER_POST; // only the fat batch pays the split cost
+            splitRemaining = 0;
             await saveState();
             continue;
           }
@@ -525,6 +529,13 @@ async function flush() {
         }
         const sent = new Set(batch);
         buffer = buffer.filter(t => !sent.has(t));
+        if (splitRemaining > 0) {
+          splitRemaining -= batch.length;
+          if (splitRemaining <= 0) {
+            postCap = MAX_TWEETS_PER_POST; // restore after a fat batch forced a split
+            splitRemaining = 0;
+          }
+        }
         await saveState();
       }
     } finally {
@@ -556,6 +567,9 @@ function emitTraceEvent(event) {
 
 function enqueueTweets(tweets, endpoint = 'unknown') {
   let newCount = 0;
+  let queuedCount = 0;
+  let backfillCount = 0;
+  let skippedCount = 0;
   for (const tweet of tweets) {
     // Always cache for video lookup (even dupes — updates with latest data)
     if (tweet.id) {
@@ -567,13 +581,28 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
       }
     }
 
+    const wasSeen = !!(tweet.id && seenIds.has(tweet.id));
     if (!dedupTweet(tweet, seenIds, { imageBackfill: imageDownload, imageCheckedIds })) {
+      skippedCount++;
       emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'DEDUPLICATED', reason: 'seenIds' });
       continue;
     }
+
     buffer.push(tweet);
-    newCount++;
-    emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'ACCEPTED', reason: null });
+    queuedCount++;
+    const isImageBackfill = wasSeen && !tweet.is_article;
+    if (isImageBackfill) {
+      backfillCount++;
+    } else {
+      newCount++;
+    }
+    emitTraceEvent({
+      timestamp: Date.now(),
+      endpoint,
+      tweetId: tweet.id,
+      status: isImageBackfill ? 'IMAGE_BACKFILL' : 'ACCEPTED',
+      reason: null,
+    });
   }
 
   // FIFO eviction if seenIds grows too large
@@ -586,15 +615,14 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
     imageCheckedIds = new Set(arr.slice(arr.length - MAX_SEEN_IDS));
   }
 
-  const dupeCount = tweets.length - newCount;
-  if (dupeCount > 0) {
-    console.log(`[xTap] Dedup: ${newCount} new, ${dupeCount} duplicates skipped (seenIds: ${seenIds.size})`);
+  if (skippedCount > 0 || backfillCount > 0) {
+    console.log(`[xTap] Dedup: ${newCount} new, ${backfillCount} image backfill, ${skippedCount} duplicates skipped (seenIds: ${seenIds.size})`);
   }
 
   sessionCount += newCount;
   allTimeCount += newCount;
   updateBadge();
-  if (newCount > 0) ensureFlushAlarm();
+  if (queuedCount > 0) ensureFlushAlarm();
 
   if (buffer.length > MAX_BUFFER_SIZE) {
     const overflow = buffer.length - MAX_BUFFER_SIZE;
@@ -816,7 +844,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === 'SET_IMAGE_DOWNLOAD') {
+    const wasOff = !imageDownload;
     imageDownload = !!msg.imageDownload;
+    if (wasOff && imageDownload) imageCheckedIds.clear();
     chrome.storage.local.set({ imageDownload });
     sendResponse({ imageDownload });
     return true;

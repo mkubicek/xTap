@@ -25,6 +25,14 @@ const testSource = bgSource
       set buffer(v) { buffer = v; },
       get seenIds() { return seenIds; },
       set seenIds(v) { seenIds = v; },
+      get imageCheckedIds() { return imageCheckedIds; },
+      set imageCheckedIds(v) { imageCheckedIds = v; },
+      get imageDownload() { return imageDownload; },
+      set imageDownload(v) { imageDownload = v; },
+      get sessionCount() { return sessionCount; },
+      set sessionCount(v) { sessionCount = v; },
+      get allTimeCount() { return allTimeCount; },
+      set allTimeCount(v) { allTimeCount = v; },
       get transport() { return transport; },
       set transport(v) { transport = v; },
       set httpToken(v) { httpToken = v; },
@@ -67,6 +75,7 @@ function tick() {
 function setup() {
   const sessionStore = createMockStorage();
   const localStore = createMockStorage();
+  let messageListener = null;
   const fetchHolder = {
     impl: async () => okResponse(),
   };
@@ -93,7 +102,7 @@ function setup() {
       runtime: {
         getManifest: () => ({}), // no update_url → isDevMode = true
         connectNative() { throw new Error('not available'); },
-        onMessage: { addListener() {} },
+        onMessage: { addListener(fn) { messageListener = fn; } },
         lastError: null,
       },
       storage: {
@@ -115,8 +124,18 @@ function setup() {
   env.localStore = localStore;
   env.fetchHolder = fetchHolder;
   env.alarms = alarms;
+  env.sendMessage = (msg) => new Promise((resolve) => {
+    const returned = messageListener(msg, {}, resolve);
+    if (returned !== true) resolve(undefined);
+  });
   return env;
 }
+
+const photoTweet = (id) => ({
+  id,
+  text: 'pic',
+  media: [{ type: 'photo', url: 'https://pbs.twimg.com/media/x.jpg:orig' }],
+});
 
 // ---------------------------------------------------------------------------
 // Daemon rejection handling
@@ -154,6 +173,71 @@ describe('daemon rejection handling', () => {
     // Daemon is alive (it answered) — a transient server error is not a
     // transport failure, so no costly reprobe cycle.
     assert.equal(env.transport, 'http');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Image backfill accounting
+// ---------------------------------------------------------------------------
+
+describe('image backfill accounting', () => {
+  it('posts backfill duplicates without incrementing capture counters', () => {
+    const env = setup();
+    env.imageDownload = true;
+    env.seenIds = new Set(['1']);
+
+    env.enqueueTweets([photoTweet('1')], 'HomeTimeline');
+
+    assert.equal(env.buffer.length, 1, 'duplicate photo tweet must still reach the daemon');
+    assert.equal(env.buffer[0].id, '1');
+    assert.equal(env.sessionCount, 0);
+    assert.equal(env.allTimeCount, 0);
+    assert.ok(env.alarms.created.some(a => a.name === 'xtap-flush'),
+      'backfill-only batches still need a flush alarm');
+
+    const event = env.traceEvents.find(e => e.tweetId === '1');
+    assert.equal(event.status, 'IMAGE_BACKFILL');
+  });
+
+  it('counts fresh captures while image download is enabled', () => {
+    const env = setup();
+    env.imageDownload = true;
+
+    env.enqueueTweets([photoTweet('1')], 'HomeTimeline');
+
+    assert.equal(env.buffer.length, 1);
+    assert.equal(env.sessionCount, 1);
+    assert.equal(env.allTimeCount, 1);
+
+    const event = env.traceEvents.find(e => e.tweetId === '1');
+    assert.equal(event.status, 'ACCEPTED');
+  });
+
+  it('keeps article duplicate captures counted separately from image backfill', () => {
+    const env = setup();
+    env.imageDownload = true;
+    env.seenIds = new Set(['1']);
+
+    env.enqueueTweets([{ ...photoTweet('1'), is_article: true }], 'TweetResultByRestId');
+
+    assert.equal(env.buffer.length, 1);
+    assert.equal(env.sessionCount, 1);
+    assert.equal(env.allTimeCount, 1);
+
+    const event = env.traceEvents.find(e => e.tweetId === '1');
+    assert.equal(event.status, 'ACCEPTED');
+  });
+
+  it('clears imageCheckedIds when image download flips from off to on', async () => {
+    const env = setup();
+    env.imageDownload = false;
+    env.imageCheckedIds = new Set(['1', '2']);
+
+    const resp = await env.sendMessage({ type: 'SET_IMAGE_DOWNLOAD', imageDownload: true });
+
+    assert.equal(resp.imageDownload, true);
+    assert.equal(env.imageDownload, true);
+    assert.equal(env.imageCheckedIds.size, 0);
   });
 });
 

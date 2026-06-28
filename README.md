@@ -34,7 +34,7 @@ xTap is a browser extension (Chrome + Firefox) that silently intercepts the Grap
 - **Structured output** — each tweet saved as a clean JSON object with author, metrics, media, and more
 - **Article support** — long-form X articles are captured when X returns the full body, with inline image references and Draft.js block structure
 - **Video download** — download videos from tweets using yt-dlp (or direct MP4 fallback) via the extension popup. Requires the HTTP daemon. **Note:** unlike passive capture, video downloads make additional network requests to X and are not stealth.
-- **Image download** — opt-in toggle in the popup ("Download images automatically") fetches photos from `pbs.twimg.com` to `<output_dir>/media/<tweet_id>/<filename>` as you browse. Daemon-side; rate-limited; logs to `media-manifest.jsonl`. **Note:** also not stealth — adds requests to the Twitter CDN.
+- **Image download** — opt-in toggle in the popup ("Download images automatically") fetches photos from `pbs.twimg.com` to `<output_dir>/media/<tweet_id>/<filename>` as you browse. If enabled after browsing, already-seen photo tweets are rechecked for media download without bumping the captured-tweet counter. Daemon-side; rate-limited; logs to `media-manifest.jsonl`. **Note:** also not stealth — adds requests to the Twitter CDN.
 - **Pause / resume** — click the extension icon to toggle capture on the fly
 - **Live counter** — badge on the extension icon shows tweets captured this session
 - **Multi-tab aware** — multiple X tabs feed into the same service worker with shared deduplication

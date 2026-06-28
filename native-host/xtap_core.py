@@ -26,7 +26,7 @@ DEFAULT_OUTPUT_DIR = os.path.realpath(
 # (the latter covers XTAP_OUTPUT_DIR pointing outside home, e.g. /data/xtap)
 _ALLOWED_ROOTS = tuple(dict.fromkeys([
     os.path.realpath(os.path.expanduser('~')),
-    os.path.realpath(DEFAULT_OUTPUT_DIR),
+    DEFAULT_OUTPUT_DIR,  # already realpath-resolved at definition
 ]))
 
 
@@ -169,6 +169,8 @@ def test_path(out_dir):
 
 # --- Video download ---
 
+VIDEO_REQUEST_TIMEOUT_S = 60
+
 _ytdlp_path = None
 _ytdlp_checked = False
 _downloads = {}
@@ -224,9 +226,11 @@ def download_direct(direct_url, tweet_id, video_dir, post_date=''):
     filename = f'{prefix}{tweet_id}.mp4'
     filepath = os.path.join(video_dir, filename)
     tmp_path = filepath + '.part'
-    # Socket-level timeout so a stalled CDN connection can't hang the
+    # _NO_REDIRECT_OPENER (not bare urlopen) so a redirect can't bounce the
+    # daemon off the allowlisted host — the host check only validates the
+    # initial URL. Socket-level timeout so a stalled CDN can't hang the
     # download thread (and the popup's polling) forever.
-    with urllib.request.urlopen(direct_url, timeout=60) as resp, \
+    with _NO_REDIRECT_OPENER.open(direct_url, timeout=VIDEO_REQUEST_TIMEOUT_S) as resp, \
             open(tmp_path, 'wb') as f:
         shutil.copyfileobj(resp, f)
     os.replace(tmp_path, filepath)

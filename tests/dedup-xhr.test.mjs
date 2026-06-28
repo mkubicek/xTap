@@ -109,6 +109,26 @@ describe('dedupTweet (image-backfill bypass)', () => {
     assert.ok(!imageCheckedIds.has('1'));
   });
 
+  it('does not bypass dedup for URL-less photo media', () => {
+    const seenIds = new Set(['1']);
+    const imageCheckedIds = new Set();
+    const opts = { imageBackfill: true, imageCheckedIds };
+    assert.equal(
+      dedupTweet({ id: '1', text: 'photo without URL', media: [{ type: 'photo' }] }, seenIds, opts),
+      false
+    );
+    assert.ok(!imageCheckedIds.has('1'));
+  });
+
+  it('handles null, empty, and mixed media defensively', () => {
+    const seenIds = new Set(['1']);
+    const opts = () => ({ imageBackfill: true, imageCheckedIds: new Set() });
+    assert.equal(dedupTweet({ id: '1', media: null }, seenIds, opts()), false);
+    assert.equal(dedupTweet({ id: '1', media: [] }, seenIds, opts()), false);
+    assert.equal(dedupTweet({ id: '1', media: [null, { type: 'photo', url: 'x' }] }, seenIds, opts()), true);
+    assert.equal(dedupTweet({ id: '1', media: [{ type: 'video' }, { type: 'photo', url: 'x' }] }, seenIds, opts()), true);
+  });
+
   it('does not bypass when imageBackfill is off (default)', () => {
     const seenIds = new Set(['1']);
     assert.equal(dedupTweet(photoTweet('1'), seenIds), false);
@@ -132,6 +152,18 @@ describe('dedupTweet (image-backfill bypass)', () => {
     const seenIds = new Set();
     assert.equal(dedupTweet({ id: '1', text: 'first' }, seenIds), true);
     assert.equal(dedupTweet({ id: '1', text: 'dupe' }, seenIds), false);
+  });
+
+  it('documents article tweets with photo media and imageBackfill', () => {
+    const seenIds = new Set(['1']);
+    const imageCheckedIds = new Set();
+    const tweet = {
+      id: '1',
+      is_article: true,
+      media: [{ type: 'photo', url: 'https://pbs.twimg.com/media/x.jpg:orig' }],
+    };
+    assert.equal(dedupTweet(tweet, seenIds, { imageBackfill: true, imageCheckedIds }), true);
+    assert.ok(imageCheckedIds.has('1'));
   });
 });
 

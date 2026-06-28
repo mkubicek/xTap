@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import threading
+import urllib.error
 
 import pytest
 
@@ -1332,16 +1333,35 @@ class TestDownloadDirect:
             def __exit__(self, *args):
                 return False
 
-        def fake_urlopen(url, timeout=None):
+        def fake_open(url, timeout=None):
             captured['url'] = url
             captured['timeout'] = timeout
             return FakeResp(b'video-bytes')
 
-        monkeypatch.setattr(xtap_core.urllib.request, 'urlopen', fake_urlopen)
+        # Must go through the no-redirect opener, not bare urlopen.
+        monkeypatch.setattr(xtap_core._NO_REDIRECT_OPENER, 'open', fake_open)
         path = xtap_core.download_direct(
             'https://video.twimg.com/ext_tw_video/1/pu/vid/x.mp4', '42', str(tmp_path))
-        assert captured['timeout'] == 60
+        assert captured['timeout'] == xtap_core.VIDEO_REQUEST_TIMEOUT_S
         assert os.path.basename(path) == '42.mp4'
         with open(path, 'rb') as f:
             assert f.read() == b'video-bytes'
         assert not os.path.exists(path + '.part')
+
+    def test_redirect_off_allowlist_is_blocked(self, tmp_path):
+        # A twimg.com URL that 302-redirects off-host must not be followed —
+        # the host check only validates the initial URL, so the no-redirect
+        # opener is the real guard. _NoRedirectHandler raises on any 3xx.
+        handler = xtap_core._NoRedirectHandler()
+        req = urllib.request.Request('https://video.twimg.com/x.mp4')
+        with pytest.raises(urllib.error.HTTPError):
+            handler.redirect_request(
+                req, io.BytesIO(b''), 302,
+                'Found', {}, 'http://169.254.169.254/latest/meta-data/')
+
+    def test_download_direct_uses_no_redirect_opener(self):
+        # Guard against a regression to bare urllib.request.urlopen.
+        import inspect
+        src = inspect.getsource(xtap_core.download_direct)
+        assert '_NO_REDIRECT_OPENER.open' in src
+        assert 'urllib.request.urlopen' not in src

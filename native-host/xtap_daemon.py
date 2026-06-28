@@ -6,6 +6,7 @@ import json
 import os
 import platform
 import signal
+import socket
 import sys
 import time
 import uuid
@@ -22,6 +23,8 @@ VERSION = '0.23.2'
 BIND_HOST = '127.0.0.1'
 BIND_PORT = int(os.environ.get('XTAP_DAEMON_PORT', 17381))
 MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB (extension caps POSTs via MAX_TWEETS_PER_POST in background.js)
+MAX_DRAIN_SIZE = 64 * 1024 * 1024  # cap bytes drained from an oversized request before replying 413
+MAX_DRAIN_IDLE_TIMEOUT_S = 0.25  # don't hang on clients that declare a body and send none
 XTAP_DIR = os.path.expanduser('~/.xtap')
 XTAP_SECRET = os.path.join(XTAP_DIR, 'secret')
 
@@ -51,6 +54,15 @@ def load_token():
 _token = None
 _seen_ids_by_dir = {}
 _state_lock = threading.Lock()
+
+
+class XtapHTTPServer(ThreadingHTTPServer):
+    # daemon_threads defaults to True on ThreadingHTTPServer, which makes
+    # server_close()'s thread-join a no-op (daemon threads aren't tracked) —
+    # an in-flight handler is then killed mid-JSONL-write at interpreter exit.
+    # False + block_on_close (default True) makes server_close() actually wait
+    # for in-flight writes to finish before the process exits.
+    daemon_threads = False
 
 
 class DaemonHandler(BaseHTTPRequestHandler):
@@ -107,9 +119,32 @@ class DaemonHandler(BaseHTTPRequestHandler):
             self._send_json({'ok': False, 'error': 'Content-Length must not be negative'}, 400)
             return -1
         if length > MAX_BODY_SIZE:
+            # Drain the (bounded) body before replying. An unread request body
+            # on a closed HTTP/1.0 socket triggers a TCP RST, which surfaces to
+            # the extension's fetch() as a network error rather than a 413 — so
+            # the client's batch-splitting recovery never sees the 413 and the
+            # oversized batch wedges the queue. Draining lets the 413 arrive
+            # cleanly. Capped so a bogus huge Content-Length can't tie us up.
+            self._drain_body(min(length, MAX_DRAIN_SIZE))
             self._send_json({'ok': False, 'error': 'Payload too large'}, 413)
             return -1
         return length
+
+    def _drain_body(self, n):
+        old_timeout = self.connection.gettimeout()
+        self.connection.settimeout(MAX_DRAIN_IDLE_TIMEOUT_S)
+        remaining = n
+        try:
+            while remaining > 0:
+                try:
+                    chunk = self.rfile.read(min(65536, remaining))
+                except socket.timeout:
+                    break
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        finally:
+            self.connection.settimeout(old_timeout)
 
     def do_POST(self):
         log_debug(f'POST {self.path} (Content-Length: {self.headers.get("Content-Length", "?")})')
@@ -306,7 +341,7 @@ def main():
     log_info(f'  Seen IDs:   {len(_seen_ids_by_dir[DEFAULT_OUTPUT_DIR])} loaded')
 
     try:
-        server = ThreadingHTTPServer((BIND_HOST, BIND_PORT), DaemonHandler)
+        server = XtapHTTPServer((BIND_HOST, BIND_PORT), DaemonHandler)
     except OSError as e:
         log_info(f'FATAL: Cannot bind to {BIND_HOST}:{BIND_PORT} — {e}')
         log_info(f'  Is another instance already running?')

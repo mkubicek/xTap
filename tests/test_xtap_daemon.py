@@ -163,6 +163,31 @@ class TestContentLengthValidation:
         assert 'too large' in body['error'].lower()
         conn.close()
 
+    def test_oversized_body_drained_so_413_arrives_cleanly(self, daemon_url, monkeypatch):
+        """An actual over-limit body (not just the header) must still get a
+        parseable 413 — the daemon drains the body so the socket close doesn't
+        RST the upload mid-stream and surface as a network error instead."""
+        import http.client
+        monkeypatch.setattr(xtap_daemon, 'MAX_BODY_SIZE', 1000)
+        payload = b'{"tweets":[' + b'0' * 4000 + b']}'  # well over 1000
+        port = int(daemon_url.rsplit(':', 1)[1])
+        conn = http.client.HTTPConnection('127.0.0.1', port)
+        conn.request('POST', '/tweets', body=payload,
+                     headers={'Content-Type': 'application/json',
+                              'Authorization': f'Bearer {TEST_TOKEN}'})
+        resp = conn.getresponse()  # must not raise (no RST)
+        body = json.loads(resp.read())
+        assert resp.status == 413
+        assert 'too large' in body['error'].lower()
+        conn.close()
+
+
+class TestServerShutdownConfig:
+    def test_handler_threads_not_daemonized(self):
+        """daemon_threads must be False so server_close() joins in-flight
+        handlers instead of the OS killing them mid-write at exit."""
+        assert xtap_daemon.XtapHTTPServer.daemon_threads is False
+
 
 # ---------------------------------------------------------------------------
 # Tests — Auth
