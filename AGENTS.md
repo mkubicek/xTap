@@ -64,6 +64,7 @@ media-manifest.jsonl     (when image download enabled — append-only download l
 - **Error resilience:** The native host logs crashes to `~/.xtap/host-error.log` with Python version and traceback. The HTTP daemon returns error status codes and logs startup diagnostics (Python version, output dir, token status). When the daemon is unreachable, the extension shows a red "!" badge and buffers tweets until the next successful reprobe (30s cooldown). The popup auto-refreshes every 2 seconds to reflect transport state changes.
 - **Daemon debug logging:** Set `XTAP_LOG_LEVEL=debug` to get per-request logging (method, path, duration, tweet counts, tracebacks). Configured via environment variable in the service template (launchd/systemd). Re-run `install.sh` after changing.
 - **Image download tuning (env vars, all optional):** `XTAP_IMAGE_DELAY_MS` (default 100) sets the inter-request delay for the background image worker. `XTAP_MAX_FILE_MB` (default 50) caps the size of a single image; the worker aborts mid-stream and deletes the `.part` file when exceeded. `XTAP_MAX_MEDIA_MB` (default unset = unlimited) caps the cumulative bytes downloaded per process; further jobs log `skipped:quota`. Bad values fall back to defaults with a stderr warning instead of crashing the daemon.
+- **Video download tuning (env vars, optional):** `XTAP_MAX_VIDEO_MB` (default 500) caps the direct MP4 fallback download size and deletes the `.part` file if exceeded; set `0` or less to disable the cap. Bad values fall back to the default with a stderr warning.
 
 ## Stealth Constraints
 
@@ -74,14 +75,14 @@ media-manifest.jsonl     (when image download enabled — append-only download l
 3. **No expando properties** — XHR URL tracking uses a `WeakMap`, never attaches properties to instances.
 4. **No DOM footprint** — no injected elements, no visible page modifications. The only transient artifact is the `<meta name="__cfg">` tag, removed within milliseconds by the bridge script.
 5. **No console output in page context** — all logging happens in the service worker, which runs outside the page's JavaScript environment.
-6. **Minimal permissions** — only `storage` and `nativeMessaging`. Host permissions scoped to `x.com`, `twitter.com`, and `127.0.0.1` (local daemon only). No `webRequest`, no `tabs`, no `scripting`, no web-accessible resources. The debug dashboard is an internal extension page (`chrome-extension://` origin), not a web-accessible resource.
+6. **Minimal permissions** — only `storage`, `nativeMessaging`, and `alarms`. Host permissions scoped to `x.com`, `twitter.com`, and `127.0.0.1` (local daemon only). No `webRequest`, no `tabs`, no `scripting`, no web-accessible resources. The debug dashboard is an internal extension page (`chrome-extension://` origin), not a web-accessible resource.
 7. **Random event channel** — per-page-load name, meta tag removed immediately after reading.
 8. **Only `open()` patched on XHR** — `send()` is not patched, so non-GraphQL XHR calls have clean stack traces.
 
 **Any change that adds network requests to X/Twitter domains must be rejected.**
 
 **Carve-outs (opt-in only, daemon-side, off by default):**
-- **Video download** (`/download-video`) — user-initiated via popup button; calls `pbs.twimg.com` / `video.twimg.com` and runs yt-dlp.
+- **Video download** (`/download-video`) — user-initiated via popup button; requires an `https://x.com/.../status/<id>` or `https://twitter.com/.../status/<id>` URL; calls `pbs.twimg.com` / `video.twimg.com` for direct MP4 fallback and runs yt-dlp when available.
 - **Image download** (`image_download:true` on `/tweets`) — opt-in toggle in popup. The daemon fetches `pbs.twimg.com` photos in a single background worker. Hostname allowlist enforced; redirects blocked; per-file size cap; never enabled by default.
 
 The browser-side capture path stays passive. These carve-outs run on the daemon, not the extension, so the page itself never originates the request.

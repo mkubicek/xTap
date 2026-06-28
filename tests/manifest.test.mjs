@@ -50,6 +50,18 @@ test('Firefox manifest preserves permissions from Chrome manifest', () => {
   assert.deepEqual(firefox.host_permissions, chrome.host_permissions);
 });
 
+test('manifest permissions stay within stealth allowlist', () => {
+  const allowedPermissions = ['alarms', 'nativeMessaging', 'storage'];
+  const allowedHosts = ['*://*.twitter.com/*', '*://*.x.com/*', 'http://127.0.0.1/*'];
+  for (const manifest of [chrome, firefox]) {
+    assert.deepEqual([...manifest.permissions].sort(), allowedPermissions);
+    assert.deepEqual([...manifest.host_permissions].sort(), allowedHosts);
+    assert.ok(!manifest.permissions.includes('webRequest'));
+    assert.ok(!manifest.permissions.includes('tabs'));
+    assert.ok(!manifest.permissions.includes('scripting'));
+  }
+});
+
 test('Firefox manifest version matches Chrome manifest', () => {
   assert.equal(firefox.version, chrome.version);
 });

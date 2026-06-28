@@ -30,6 +30,10 @@ _ALLOWED_ROOTS = tuple(dict.fromkeys([
 ]))
 
 
+def _article_seen_key(tweet_id):
+    return f'article:{tweet_id}'
+
+
 def validate_output_dir(path):
     """Validate that a resolved path is under an allowed root directory.
 
@@ -75,9 +79,12 @@ def load_seen_ids(out_dir):
                     if not line:
                         continue
                     try:
-                        tweet_id = json.loads(line).get('id')
+                        tweet = json.loads(line)
+                        tweet_id = tweet.get('id')
                         if tweet_id:
                             seen.add(tweet_id)
+                            if tweet.get('is_article'):
+                                seen.add(_article_seen_key(tweet_id))
                     except (json.JSONDecodeError, KeyError):
                         continue
         except OSError as e:
@@ -121,12 +128,16 @@ def write_tweets(tweets, out_dir, seen_ids):
     with open(out_file, 'a', encoding='utf-8') as f:
         for tweet in tweets:
             tid = tweet.get('id')
-            if tid and (tid in seen_ids or tid in written_ids) and not tweet.get('is_article'):
-                dupes += 1
-                continue
+            article_key = _article_seen_key(tid) if tid and tweet.get('is_article') else None
+            if tid and (tid in seen_ids or tid in written_ids):
+                if not article_key or article_key in seen_ids or article_key in written_ids:
+                    dupes += 1
+                    continue
             f.write(json.dumps(tweet, ensure_ascii=False) + '\n')
             if tid:
                 written_ids.add(tid)
+            if article_key:
+                written_ids.add(article_key)
             count += 1
     seen_ids |= written_ids
     return count, dupes
@@ -170,6 +181,9 @@ def test_path(out_dir):
 # --- Video download ---
 
 VIDEO_REQUEST_TIMEOUT_S = 60
+VIDEO_CHUNK_SIZE = 64 * 1024
+DEFAULT_MAX_VIDEO_MB = 500
+TWEET_STATUS_HOSTS = frozenset({'x.com', 'twitter.com'})
 
 _ytdlp_path = None
 _ytdlp_checked = False
@@ -202,14 +216,58 @@ def get_download_status(download_id):
 
 def _date_prefix(post_date):
     """Convert ISO date string to yyyy.mm.dd prefix, or empty string on failure."""
-    if not post_date:
+    if not isinstance(post_date, str):
         return ''
+    match = re.match(r'^(\d{4})-(\d{2})-(\d{2})(?:T|$)', post_date)
+    if not match:
+        return ''
+    year, month, day = match.groups()
     try:
-        # Handle both "2024-01-15T12:34:56.000Z" and "2024-01-15"
-        dt = post_date[:10].replace('-', '.')
-        return dt + '_'
-    except Exception:
+        datetime.strptime(f'{year}-{month}-{day}', '%Y-%m-%d')
+    except ValueError:
         return ''
+    return f'{year}.{month}.{day}_'
+
+
+def _tweet_status_id(tweet_url):
+    """Validate an X/Twitter status URL and return its numeric tweet ID."""
+    if not isinstance(tweet_url, str):
+        raise ValueError('tweetUrl must be an X/Twitter status URL')
+    parsed = urlparse(tweet_url)
+    host = (parsed.hostname or '').lower()
+    if parsed.scheme != 'https' or host not in TWEET_STATUS_HOSTS:
+        raise ValueError(f'tweetUrl not allowed: {tweet_url!r}')
+    match = re.search(r'/(?:[^/?#]+/)*status/(\d+)(?:/|$)', parsed.path)
+    if not match:
+        raise ValueError(f'tweetUrl must be a status URL: {tweet_url!r}')
+    return match.group(1)
+
+
+def validate_tweet_url(tweet_url):
+    """Public validation hook for daemon request handling."""
+    _tweet_status_id(tweet_url)
+    return tweet_url
+
+
+def _safe_video_path(video_dir, filename):
+    if (not filename or os.path.basename(filename) != filename or
+            '/' in filename or '\\' in filename):
+        raise ValueError(f'unsafe video filename: {filename!r}')
+    base = os.path.realpath(video_dir)
+    candidate = os.path.realpath(os.path.join(video_dir, filename))
+    try:
+        if os.path.commonpath([base, candidate]) != base:
+            raise ValueError(f'video path escapes output directory: {filename!r}')
+    except ValueError:
+        raise ValueError(f'video path escapes output directory: {filename!r}')
+    return candidate
+
+
+def _video_max_bytes():
+    max_video_mb = _env_float('XTAP_MAX_VIDEO_MB', float(DEFAULT_MAX_VIDEO_MB), label='video')
+    if max_video_mb <= 0:
+        return None
+    return int(max_video_mb * 1024 * 1024)
 
 
 def download_direct(direct_url, tweet_id, video_dir, post_date=''):
@@ -224,21 +282,40 @@ def download_direct(direct_url, tweet_id, video_dir, post_date=''):
     os.makedirs(video_dir, exist_ok=True)
     prefix = _date_prefix(post_date)
     filename = f'{prefix}{tweet_id}.mp4'
-    filepath = os.path.join(video_dir, filename)
+    filepath = _safe_video_path(video_dir, filename)
     tmp_path = filepath + '.part'
+    max_bytes = _video_max_bytes()
     # _NO_REDIRECT_OPENER (not bare urlopen) so a redirect can't bounce the
     # daemon off the allowlisted host — the host check only validates the
     # initial URL. Socket-level timeout so a stalled CDN can't hang the
     # download thread (and the popup's polling) forever.
-    with _NO_REDIRECT_OPENER.open(direct_url, timeout=VIDEO_REQUEST_TIMEOUT_S) as resp, \
-            open(tmp_path, 'wb') as f:
-        shutil.copyfileobj(resp, f)
-    os.replace(tmp_path, filepath)
+    try:
+        with _NO_REDIRECT_OPENER.open(direct_url, timeout=VIDEO_REQUEST_TIMEOUT_S) as resp, \
+                open(tmp_path, 'wb') as f:
+            headers = getattr(resp, 'headers', {}) or {}
+            content_length = headers.get('Content-Length')
+            if max_bytes is not None and content_length and content_length.isdigit():
+                if int(content_length) > max_bytes:
+                    raise ValueError('video exceeds XTAP_MAX_VIDEO_MB')
+            written = 0
+            while True:
+                chunk = resp.read(VIDEO_CHUNK_SIZE)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if max_bytes is not None and written > max_bytes:
+                    raise ValueError('video exceeds XTAP_MAX_VIDEO_MB')
+                f.write(chunk)
+        os.replace(tmp_path, filepath)
+    except Exception:
+        _safe_unlink(tmp_path)
+        raise
     return filepath
 
 
 def start_download(download_id, tweet_url, direct_url, out_dir, post_date=''):  # pragma: no cover
     """Start a background download. Returns immediately; poll get_download_status()."""
+    tweet_id = _tweet_status_id(tweet_url)
     video_dir = os.path.join(out_dir, 'videos')
     os.makedirs(video_dir, exist_ok=True)
 
@@ -257,9 +334,6 @@ def start_download(download_id, tweet_url, direct_url, out_dir, post_date=''):  
             elif direct_url:
                 with _downloads_lock:
                     _downloads[download_id]['progress'] = 0
-                # Extract tweet ID from URL
-                m = re.search(r'/status/(\d+)', tweet_url)
-                tweet_id = m.group(1) if m else download_id
                 path = download_direct(direct_url, tweet_id, video_dir, post_date)
                 with _downloads_lock:
                     _downloads[download_id].update(
@@ -351,15 +425,16 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
     Downloads into a .downloading/ staging subdirectory so partial files
     are not visible in video_dir until the download is fully complete.
     """
+    tweet_id = _tweet_status_id(tweet_url)
     staging_dir = os.path.join(video_dir, '.downloading')
     os.makedirs(staging_dir, exist_ok=True)
     prefix = _date_prefix(post_date)
     # Pin the tweet status ID in the filename rather than relying on %(id)s,
     # which some yt-dlp Twitter sub-extractors (amplify/broadcast/card) fill
     # with a media or broadcast ID instead of the tweet ID.
-    m = re.search(r'/status/(\d+)', tweet_url)
-    id_part = m.group(1) if m else '%(id)s'
-    output_template = os.path.join(staging_dir, prefix + '%(title)s [' + id_part + '].%(ext)s')
+    output_template = _safe_video_path(
+        staging_dir,
+        prefix + '%(title)s [' + tweet_id + '].%(ext)s')
     cmd = [
         _ytdlp_path,
         '--newline', '--progress',
@@ -394,8 +469,15 @@ def _download_with_ytdlp(download_id, tweet_url, video_dir, post_date=''):  # pr
     # Move completed file from staging dir to final video_dir
     final_path = tracker.final_path
     if final_path and os.path.isfile(final_path):
-        dest_path = os.path.join(video_dir, os.path.basename(final_path))
-        shutil.move(final_path, dest_path)
+        staging_real = os.path.realpath(staging_dir)
+        final_real = os.path.realpath(final_path)
+        try:
+            if os.path.commonpath([staging_real, final_real]) != staging_real:
+                raise RuntimeError('yt-dlp output escaped staging directory')
+        except ValueError:
+            raise RuntimeError('yt-dlp output escaped staging directory')
+        dest_path = _safe_video_path(video_dir, os.path.basename(final_path))
+        shutil.move(final_real, dest_path)
         final_path = dest_path
     with _downloads_lock:
         _downloads[download_id].update(
@@ -426,14 +508,14 @@ def _env_int(name, default):
         return default
 
 
-def _env_float(name, default):
+def _env_float(name, default, label='image'):
     raw = (os.environ.get(name) or '').strip()
     if not raw:
         return default
     try:
         return float(raw)
     except ValueError:
-        print(f'[xtap:image] invalid {name}={raw!r}, using {default}', file=sys.stderr)
+        print(f'[xtap:{label}] invalid {name}={raw!r}, using {default}', file=sys.stderr)
         return default
 
 
@@ -473,6 +555,14 @@ def _is_safe_rel_path(out_dir, rel_path):
         return False
 
 
+def _strip_article_text_local_path(article, rel_path):
+    text = article.get('text')
+    if not isinstance(text, str):
+        return
+    pattern = re.compile(r'!\[[^\]\n]*\]\(' + re.escape(rel_path) + r'\)')
+    article['text'] = pattern.sub('', text)
+
+
 def collect_image_jobs(tweets, out_dir):
     """Compute the list of image download jobs for a batch of tweets.
 
@@ -484,9 +574,9 @@ def collect_image_jobs(tweets, out_dir):
     Article media items (under `tweet.article.media[]`) already have
     `local_path` set by the JS parser because that path is also embedded
     in the article's rendered Markdown text (`![](media/<id>/file.png)`).
-    Those entries are validated here but not mutated; if the supplied
-    `local_path` would escape `out_dir`, the field is stripped so the
-    unsafe path never lands in the JSONL.
+    Those entries are validated here; if the supplied `local_path` would
+    escape `out_dir`, the field and its rendered Markdown image reference
+    are stripped so the unsafe path never lands in the JSONL.
 
     Path components are validated against `out_dir`: tweet IDs must match
     [0-9]+, filenames must be plain basenames, and the final resolved
@@ -527,6 +617,7 @@ def collect_image_jobs(tweets, out_dir):
             if not _is_safe_rel_path(out_dir, rel_path):
                 # Strip the unsafe path so it doesn't end up in the JSONL.
                 item.pop('local_path', None)
+                _strip_article_text_local_path(article, rel_path)
                 continue
             pending.append({'tweet_id': tweet_id, 'url': url, 'rel_path': rel_path})
 

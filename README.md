@@ -278,6 +278,17 @@ On Windows, set it as a *user* environment variable (`[Environment]::SetEnvironm
 
 > **macOS note:** On macOS, the HTTP daemon (installed via `install.sh`) runs outside browser TCC sandboxes and can write to protected paths like `~/Documents` and iCloud Drive after a one-time macOS permission prompt.
 
+### Download tuning
+
+These daemon environment variables are optional. Re-run the installer after changing them so the service definition picks them up.
+
+| Setting | Default | Description |
+|---|---:|---|
+| `XTAP_IMAGE_DELAY_MS` | `100` | Delay between background image requests |
+| `XTAP_MAX_FILE_MB` | `50` | Max size for one downloaded image |
+| `XTAP_MAX_MEDIA_MB` | *(unlimited)* | Max cumulative image bytes per daemon process |
+| `XTAP_MAX_VIDEO_MB` | `500` | Max size for one direct MP4 fallback video download; set `0` or less to disable the cap |
+
 ## Output Format
 
 Output is written to daily files (`tweets-YYYY-MM-DD.jsonl`). Each line is a self-contained JSON object:

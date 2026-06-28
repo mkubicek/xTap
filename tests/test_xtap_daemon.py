@@ -207,9 +207,14 @@ class TestAuth:
         assert status == 401
         assert body['error'] == 'Unauthorized'
 
-    def test_content_length_checked_before_auth(self, daemon_url):
-        """Oversized request should be rejected with 413 even without auth."""
+    def test_auth_checked_before_oversized_body_drain(self, daemon_url, monkeypatch):
+        """Unauthenticated oversized requests must not force body draining."""
         import http.client
+        drained = []
+        monkeypatch.setattr(
+            xtap_daemon.DaemonHandler,
+            '_drain_body',
+            lambda _self, n: drained.append(n))
         huge_length = xtap_daemon.MAX_BODY_SIZE + 1
         conn = http.client.HTTPConnection('127.0.0.1', int(daemon_url.rsplit(':', 1)[1]))
         conn.putrequest('POST', '/tweets')
@@ -219,8 +224,9 @@ class TestAuth:
         conn.endheaders()
         resp = conn.getresponse()
         body = json.loads(resp.read())
-        # Should get 413, not 401
-        assert resp.status == 413
+        assert resp.status == 401
+        assert body['error'] == 'Unauthorized'
+        assert drained == []
         conn.close()
 
 
@@ -371,6 +377,29 @@ class TestAuthorizedRequest:
         )
         assert status == 400
         assert 'Invalid dump filename' in body['error']
+
+
+class TestDownloadVideo:
+    def test_rejects_offsite_tweet_url_before_starting_download(self, daemon_url, monkeypatch):
+        called = []
+        monkeypatch.setattr(
+            xtap_daemon,
+            'start_download',
+            lambda *args, **kwargs: called.append((args, kwargs)))
+
+        status, body = _post(
+            daemon_url, '/download-video',
+            body={
+                'tweetUrl': 'http://169.254.169.254/latest/meta-data/',
+                'directUrl': '',
+            },
+            token=TEST_TOKEN,
+        )
+
+        assert status == 400
+        assert body['ok'] is False
+        assert 'tweetUrl' in body['error']
+        assert called == []
 
 
 # ---------------------------------------------------------------------------
@@ -554,10 +583,13 @@ class TestArticlePathSanitization:
                 'id': '777000777',
                 'text': 'article',
                 'is_article': True,
-                'article': {'media': [{
-                    'url': 'https://pbs.twimg.com/media/abc.jpg',
-                    'local_path': '../../../../etc/evil.jpg',
-                }]},
+                'article': {
+                    'text': 'before\n![evil](../../../../etc/evil.jpg)\nafter',
+                    'media': [{
+                        'url': 'https://pbs.twimg.com/media/abc.jpg',
+                        'local_path': '../../../../etc/evil.jpg',
+                    }],
+                },
             }],
         }
         status, resp = _post(daemon_url, '/tweets', body, token=TEST_TOKEN)
@@ -567,3 +599,6 @@ class TestArticlePathSanitization:
         assert len(files) == 1
         line = json.loads(files[0].read_text(encoding='utf-8').strip())
         assert 'local_path' not in line['article']['media'][0]
+        assert '../../../../etc/evil.jpg' not in line['article']['text']
+        assert 'before' in line['article']['text']
+        assert 'after' in line['article']['text']

@@ -8,6 +8,7 @@ const FLUSH_INTERVAL_MS = 30_000;
 const MAX_SEEN_IDS = 50_000;
 const HTTP_TIMEOUT_MS = 10_000;
 const MAX_BUFFER_SIZE = 2000;
+const IMAGE_BACKFILL_FLAG = '__xtap_image_backfill';
 
 let captureEnabled = true;
 let buffer = [];
@@ -479,6 +480,16 @@ async function reprobeTransport() {
 const MAX_TWEETS_PER_POST = 200;
 let flushInFlight = false;
 
+function tweetForHost(tweet) {
+  if (!tweet || !tweet[IMAGE_BACKFILL_FLAG]) return tweet;
+  const { [IMAGE_BACKFILL_FLAG]: _ignored, ...clean } = tweet;
+  return clean;
+}
+
+function isBufferedImageBackfill(tweet) {
+  return !!(tweet && tweet[IMAGE_BACKFILL_FLAG]);
+}
+
 async function flush() {
   if (buffer.length === 0 && logBuffer.length === 0) return;
 
@@ -497,7 +508,7 @@ async function flush() {
       let splitRemaining = 0;
       while (buffer.length > 0) {
         const batch = buffer.slice(0, postCap);
-        const message = { tweets: batch };
+        const message = { tweets: batch.map(tweetForHost) };
         if (outputDir) message.outputDir = outputDir;
         if (imageDownload) message.imageDownload = true;
 
@@ -515,7 +526,7 @@ async function flush() {
               continue;
             }
             const oversized = batch[0];
-            buffer = buffer.filter(t => t !== oversized);
+            buffer.shift();
             console.error(`[xTap] Dropping tweet ${oversized.id}: exceeds daemon body limit`);
             emitTraceEvent({ timestamp: Date.now(), endpoint: 'flush', tweetId: oversized.id, status: 'DROPPED_OVERSIZED', reason: 'single tweet exceeds daemon body limit' });
             postCap = MAX_TWEETS_PER_POST; // only the fat batch pays the split cost
@@ -527,8 +538,7 @@ async function flush() {
           console.error('[xTap] Host rejected tweets:', resp?.error || 'no response');
           break;
         }
-        const sent = new Set(batch);
-        buffer = buffer.filter(t => !sent.has(t));
+        buffer.splice(0, batch.length);
         if (splitRemaining > 0) {
           splitRemaining -= batch.length;
           if (splitRemaining <= 0) {
@@ -570,6 +580,7 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
   let queuedCount = 0;
   let backfillCount = 0;
   let skippedCount = 0;
+  let droppedBackfillCount = 0;
   for (const tweet of tweets) {
     // Always cache for video lookup (even dupes — updates with latest data)
     if (tweet.id) {
@@ -588,14 +599,15 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
       continue;
     }
 
-    buffer.push(tweet);
-    queuedCount++;
     const isImageBackfill = wasSeen && !tweet.is_article;
     if (isImageBackfill) {
       backfillCount++;
+      tweet[IMAGE_BACKFILL_FLAG] = true;
     } else {
       newCount++;
     }
+    buffer.push(tweet);
+    queuedCount++;
     emitTraceEvent({
       timestamp: Date.now(),
       endpoint,
@@ -615,20 +627,31 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
     imageCheckedIds = new Set(arr.slice(arr.length - MAX_SEEN_IDS));
   }
 
-  if (skippedCount > 0 || backfillCount > 0) {
-    console.log(`[xTap] Dedup: ${newCount} new, ${backfillCount} image backfill, ${skippedCount} duplicates skipped (seenIds: ${seenIds.size})`);
-  }
-
   sessionCount += newCount;
   allTimeCount += newCount;
   updateBadge();
   if (queuedCount > 0) ensureFlushAlarm();
 
   if (buffer.length > MAX_BUFFER_SIZE) {
-    const overflow = buffer.length - MAX_BUFFER_SIZE;
-    buffer.splice(0, overflow);
-    console.warn(`[xTap] Buffer overflow: dropped ${overflow} oldest tweets (cap: ${MAX_BUFFER_SIZE})`);
-    emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: null, status: 'BUFFER_OVERFLOW', reason: `dropped ${overflow}` });
+    let droppedOldestCount = 0;
+    while (buffer.length > MAX_BUFFER_SIZE) {
+      const backfillIndex = buffer.findIndex(isBufferedImageBackfill);
+      if (backfillIndex !== -1) {
+        const [dropped] = buffer.splice(backfillIndex, 1);
+        if (dropped?.id) imageCheckedIds.delete(dropped.id);
+        droppedBackfillCount++;
+      } else {
+        buffer.shift();
+        droppedOldestCount++;
+      }
+    }
+    const droppedTotal = droppedOldestCount + droppedBackfillCount;
+    console.warn(`[xTap] Buffer overflow: dropped ${droppedTotal} tweets (${droppedBackfillCount} image backfill, ${droppedOldestCount} oldest; cap: ${MAX_BUFFER_SIZE})`);
+    emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: null, status: 'BUFFER_OVERFLOW', reason: `dropped ${droppedTotal}` });
+  }
+
+  if (skippedCount > 0 || backfillCount > 0 || droppedBackfillCount > 0) {
+    console.log(`[xTap] Dedup: ${newCount} new, ${backfillCount} image backfill, ${skippedCount} duplicates skipped, ${droppedBackfillCount} backfill dropped (seenIds: ${seenIds.size})`);
   }
 }
 
@@ -764,7 +787,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         } else {
           await clearStagedPayload(stageKey);
         }
-        // Flush after WAL commit so buffer.splice in flush() can't race with
+        // Flush after WAL commit so acknowledged batch removal can't race with
         // the persist-then-clear sequence above.
         if (buffer.length >= BATCH_SIZE) flush();
       } catch (e) {

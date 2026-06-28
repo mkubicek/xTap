@@ -199,6 +199,43 @@ describe('image backfill accounting', () => {
     assert.equal(event.status, 'IMAGE_BACKFILL');
   });
 
+  it('strips the internal backfill marker before POSTing to the daemon', async () => {
+    const env = setup();
+    env.imageDownload = true;
+    env.seenIds = new Set(['1']);
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    let posted = null;
+    env.fetchHolder.impl = async (_url, opts) => {
+      posted = JSON.parse(opts.body);
+      return okResponse({ ok: true });
+    };
+
+    env.enqueueTweets([photoTweet('1')], 'HomeTimeline');
+    await env.flush();
+
+    assert.equal(posted.tweets.length, 1);
+    assert.equal(posted.tweets[0].id, '1');
+    assert.equal(posted.tweets[0].__xtap_image_backfill, undefined);
+  });
+
+  it('drops image backfill before real buffered tweets when the buffer is full', () => {
+    const env = setup();
+    env.imageDownload = true;
+    env.seenIds = new Set(['1']);
+    env.buffer = Array.from({ length: 2000 }, (_, i) => ({ id: `real-${i}`, text: 'real' }));
+
+    env.enqueueTweets([photoTweet('1')], 'HomeTimeline');
+
+    assert.equal(env.buffer.length, 2000);
+    assert.equal(env.buffer[0].id, 'real-0');
+    assert.equal(env.buffer.some(t => t.id === '1'), false);
+    assert.equal(env.imageCheckedIds.has('1'), false,
+      'dropped backfill should be retryable later in the same service-worker session');
+    assert.ok(env.traceEvents.some(e => e.status === 'BUFFER_OVERFLOW'));
+  });
+
   it('counts fresh captures while image download is enabled', () => {
     const env = setup();
     env.imageDownload = true;
@@ -213,7 +250,7 @@ describe('image backfill accounting', () => {
     assert.equal(event.status, 'ACCEPTED');
   });
 
-  it('keeps article duplicate captures counted separately from image backfill', () => {
+  it('lets one article duplicate enrich a previous non-article capture', () => {
     const env = setup();
     env.imageDownload = true;
     env.seenIds = new Set(['1']);
@@ -226,6 +263,20 @@ describe('image backfill accounting', () => {
 
     const event = env.traceEvents.find(e => e.tweetId === '1');
     assert.equal(event.status, 'ACCEPTED');
+  });
+
+  it('deduplicates repeated full article captures after the enrichment write', () => {
+    const env = setup();
+    env.imageDownload = true;
+    env.seenIds = new Set(['1']);
+
+    env.enqueueTweets([{ ...photoTweet('1'), is_article: true }], 'TweetResultByRestId');
+    env.enqueueTweets([{ ...photoTweet('1'), is_article: true }], 'TweetResultByRestId');
+
+    assert.equal(env.buffer.length, 1);
+    assert.equal(env.sessionCount, 1);
+    assert.equal(env.allTimeCount, 1);
+    assert.ok(env.traceEvents.some(e => e.tweetId === '1' && e.status === 'DEDUPLICATED'));
   });
 
   it('clears imageCheckedIds when image download flips from off to on', async () => {

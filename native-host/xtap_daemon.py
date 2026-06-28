@@ -17,7 +17,8 @@ from xtap_core import (DEFAULT_OUTPUT_DIR, load_seen_ids, resolve_output_dir,
                        validate_output_dir, write_tweets, write_log,
                        write_dump, test_path,
                        check_ytdlp, start_download, get_download_status,
-                       collect_image_jobs, get_image_downloader)
+                       collect_image_jobs, get_image_downloader,
+                       validate_tweet_url)
 
 VERSION = '0.23.2'
 BIND_HOST = '127.0.0.1'
@@ -149,11 +150,11 @@ class DaemonHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         log_debug(f'POST {self.path} (Content-Length: {self.headers.get("Content-Length", "?")})')
 
-        length = self._validate_content_length()
-        if length < 0:
+        if not self._check_auth():
             return
 
-        if not self._check_auth():
+        length = self._validate_content_length()
+        if length < 0:
             return
 
         try:
@@ -269,6 +270,7 @@ class DaemonHandler(BaseHTTPRequestHandler):
             direct_url = body.get('directUrl', '')
             post_date = body.get('postDate', '')
             msg_dir = body.get('outputDir', '').strip()
+            validate_tweet_url(tweet_url)
             with _state_lock:
                 out_dir, _ = resolve_output_dir(msg_dir, DEFAULT_OUTPUT_DIR, _seen_ids_by_dir)
             download_id = str(uuid.uuid4())
@@ -363,9 +365,8 @@ def main():
 
     log_info(f'Listening on {BIND_HOST}:{BIND_PORT}')
     server.serve_forever()
-    # Join in-flight handler threads before exiting — they are daemon threads
-    # and would otherwise be killed mid-write at interpreter shutdown,
-    # truncating a JSONL line.
+    # Join in-flight non-daemon handler threads before exiting so any active
+    # JSONL write can finish cleanly.
     server.server_close()
     log_info('Shutdown complete')
 

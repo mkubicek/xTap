@@ -39,10 +39,11 @@ describe('dedupTweet (Bug 1: undefined poisoning)', () => {
     assert.equal(dedupTweet({ id: '2', text: 'second' }, seenIds), true);
   });
 
-  it('does not deduplicate article tweets even with same id', () => {
+  it('lets one full article enrich a previously seen non-article row', () => {
     const seenIds = new Set();
     assert.equal(dedupTweet({ id: '1', text: 'stub' }, seenIds), true);
     assert.equal(dedupTweet({ id: '1', text: 'full article', is_article: true }, seenIds), true);
+    assert.equal(dedupTweet({ id: '1', text: 'same full article', is_article: true }, seenIds), false);
   });
 
   it('respects pre-existing seenIds', () => {
