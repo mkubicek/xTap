@@ -440,6 +440,46 @@ describe('flush in-flight durability', () => {
 
     assert.deepEqual(env.buffer.map(t => t.id), ['1', '2']);
   });
+
+  it('overflow eviction during an in-flight POST must not discard unsent tweets', async () => {
+    const env = setup();
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    const posted = [];
+    let resolveFirst;
+    // Hold the first POST open so a buffer overflow can race it.
+    env.fetchHolder.impl = (url, opts) => {
+      posted.push(JSON.parse(opts.body).tweets.map(t => t.id));
+      return new Promise(r => { resolveFirst = r; });
+    };
+    // Buffer sits at the overflow cap; the first 200-tweet POST covers t0..t199.
+    env.buffer = Array.from({ length: 2000 }, (_, i) => ({ id: `t${i}`, text: 'x' }));
+
+    const flushP = env.flush();
+    await tick();
+
+    // Remaining POSTs (draining the rest of the backlog) ack immediately.
+    env.fetchHolder.impl = (url, opts) => {
+      posted.push(JSON.parse(opts.body).tweets.map(t => t.id));
+      return Promise.resolve(okResponse());
+    };
+    // 50 fresh tweets arrive mid-POST → overflow eviction shifts 50 (t0..t49)
+    // off the buffer front, sliding it out from under the in-flight batch.
+    env.enqueueTweets(Array.from({ length: 50 }, (_, i) => ({ id: `n${i}`, text: 'x' })), 'test');
+
+    resolveFirst(okResponse());
+    await flushP;
+
+    const sent = new Set(posted.flat());
+    // t200..t249 were never in the acked batch and were never evicted. A
+    // positional splice(0, batch.length) after the ack would delete them (the
+    // buffer front shifted by 50), silently losing 50 never-sent tweets.
+    for (let i = 200; i < 250; i++) {
+      assert.ok(sent.has(`t${i}`), `t${i} was discarded unsent by the ack removal`);
+    }
+    assert.equal(env.buffer.length, 0, 'queue must fully drain');
+  });
 });
 
 // ---------------------------------------------------------------------------

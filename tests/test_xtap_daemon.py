@@ -554,6 +554,59 @@ class TestSignalShutdown:
                 proc.kill()
                 proc.wait(timeout=5)
 
+    @pytest.mark.skipif(platform.system() == 'Windows', reason='POSIX signals only')
+    def test_idle_connection_does_not_block_shutdown(self, tmp_path):
+        """A peer that opens a connection but never sends a request parks a
+        non-daemon handler thread; with daemon_threads=False, server_close()
+        joins it on shutdown. Without a socket timeout on DaemonHandler that
+        join blocks until launchd/systemd SIGKILLs mid-write. The handler
+        timeout must let the idle thread expire so shutdown still completes."""
+        port = _free_port()
+        (tmp_path / '.xtap').mkdir()
+        (tmp_path / '.xtap' / 'secret').write_text('test-token')
+        env = {**os.environ,
+               'HOME': str(tmp_path),
+               'XTAP_DAEMON_PORT': str(port),
+               'XTAP_OUTPUT_DIR': str(tmp_path / 'out'),
+               # Short so the test is fast; the real default is 15s.
+               'XTAP_CONN_TIMEOUT_S': '2'}
+        daemon_py = os.path.join(
+            os.path.dirname(os.path.abspath(xtap_daemon.__file__)), 'xtap_daemon.py')
+        proc = subprocess.Popen([sys.executable, daemon_py], env=env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                text=True)
+        stderr_lines = []
+        threading.Thread(
+            target=lambda: stderr_lines.extend(proc.stderr), daemon=True).start()
+        idle = None
+        try:
+            deadline = time.time() + 10
+            while not any('Listening' in line for line in stderr_lines):
+                if proc.poll() is not None:
+                    pytest.fail(f'daemon exited early: {"".join(stderr_lines)}')
+                if time.time() > deadline:
+                    pytest.fail(f'daemon never started: {"".join(stderr_lines)}')
+                time.sleep(0.05)
+
+            # Open a connection and send nothing — the handler thread blocks in
+            # readline() waiting for a request line that never comes.
+            idle = socket.create_connection(('127.0.0.1', port), timeout=5)
+            time.sleep(0.2)  # let the daemon accept + spawn the handler thread
+
+            proc.send_signal(signal.SIGTERM)
+            try:
+                # 2s conn timeout + generous margin for the shutdown join.
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pytest.fail('idle connection blocked shutdown past the socket '
+                            'timeout — DaemonHandler.timeout is not taking effect')
+        finally:
+            if idle is not None:
+                idle.close()
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+
 
 def _free_port():
     s = socket.socket()

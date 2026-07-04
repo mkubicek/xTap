@@ -490,6 +490,17 @@ function isBufferedImageBackfill(tweet) {
   return !!(tweet && tweet[IMAGE_BACKFILL_FLAG]);
 }
 
+// Remove the delivered/dropped tweets by object identity, never by position.
+// An overflow eviction in enqueueTweets can splice the buffer front while
+// flush() awaits the POST, so buffer[0..batch.length) may no longer be the
+// tweets we sent — a positional splice would then discard never-sent tweets
+// (their ids are already in seenIds, so the loss is permanent). Reassigning
+// `buffer` is safe: no other code runs between the await and here.
+function removeDelivered(batch) {
+  const delivered = new Set(batch);
+  buffer = buffer.filter(t => !delivered.has(t));
+}
+
 async function flush() {
   if (buffer.length === 0 && logBuffer.length === 0) return;
 
@@ -526,7 +537,7 @@ async function flush() {
               continue;
             }
             const oversized = batch[0];
-            buffer.shift();
+            removeDelivered([oversized]);
             console.error(`[xTap] Dropping tweet ${oversized.id}: exceeds daemon body limit`);
             emitTraceEvent({ timestamp: Date.now(), endpoint: 'flush', tweetId: oversized.id, status: 'DROPPED_OVERSIZED', reason: 'single tweet exceeds daemon body limit' });
             postCap = MAX_TWEETS_PER_POST; // only the fat batch pays the split cost
@@ -538,7 +549,7 @@ async function flush() {
           console.error('[xTap] Host rejected tweets:', resp?.error || 'no response');
           break;
         }
-        buffer.splice(0, batch.length);
+        removeDelivered(batch);
         if (splitRemaining > 0) {
           splitRemaining -= batch.length;
           if (splitRemaining <= 0) {
