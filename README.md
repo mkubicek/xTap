@@ -288,6 +288,8 @@ These daemon environment variables are optional. Re-run the installer after chan
 | `XTAP_MAX_FILE_MB` | `50` | Max size for one downloaded image |
 | `XTAP_MAX_MEDIA_MB` | *(unlimited)* | Max cumulative image bytes per daemon process |
 | `XTAP_MAX_VIDEO_MB` | `500` | Max size for one direct MP4 fallback video download; set `0` or less to disable the cap |
+| `XTAP_CONN_TIMEOUT_S` | `15` | Daemon per-connection socket timeout — drops idle/stalled connections; bad or `<=0` values fall back to the default (the timeout is never disabled) |
+| `XTAP_SHUTDOWN_GRACE_S` | `10` | Max seconds the daemon waits for in-flight requests at shutdown before force-exiting; bad or `<=0` values fall back to the default |
 
 ## Output Format
 

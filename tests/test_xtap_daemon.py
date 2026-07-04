@@ -181,6 +181,35 @@ class TestContentLengthValidation:
         assert 'too large' in body['error'].lower()
         conn.close()
 
+    def test_413_arrives_when_client_stalls_mid_drain(self, daemon_url, monkeypatch):
+        """_drain_body's idle-timeout escape: a client that declares an
+        oversized body but stops sending must still get its 413 within the
+        drain idle window (MAX_DRAIN_IDLE_TIMEOUT_S) instead of pinning the
+        handler thread until the full body arrives."""
+        monkeypatch.setattr(xtap_daemon, 'MAX_BODY_SIZE', 1000)
+        port = int(daemon_url.rsplit(':', 1)[1])
+        s = socket.create_connection(('127.0.0.1', port), timeout=5)
+        try:
+            s.sendall(b'POST /tweets HTTP/1.1\r\n'
+                      b'Host: 127.0.0.1\r\n'
+                      b'Authorization: Bearer ' + TEST_TOKEN.encode() + b'\r\n'
+                      b'Content-Type: application/json\r\n'
+                      b'Content-Length: 500000\r\n'
+                      b'\r\n'
+                      b'partial-body-then-silence')
+            s.settimeout(5)
+            start = time.time()
+            data = s.recv(65536)
+            elapsed = time.time() - start
+            assert b'413' in data.split(b'\r\n', 1)[0], \
+                f'expected a 413 status line, got: {data[:80]!r}'
+            # Idle timeout is 0.25s; anything near the 5s recv timeout means
+            # the drain blocked instead of bailing on the stalled client.
+            assert elapsed < 2, \
+                f'413 took {elapsed:.1f}s — drain idle timeout did not fire'
+        finally:
+            s.close()
+
 
 class TestServerShutdownConfig:
     def test_handler_threads_not_daemonized(self):
@@ -513,6 +542,40 @@ class TestConcurrency:
 # Tests — signal shutdown (the handler must not deadlock serve_forever)
 # ---------------------------------------------------------------------------
 
+def _start_daemon(tmp_path, extra_env=None):
+    """Launch xtap_daemon.py as a subprocess and wait for it to listen.
+
+    Returns (proc, port, stderr_lines). Caller must kill proc if still alive.
+    """
+    port = _free_port()
+    xtap_dir = tmp_path / '.xtap'
+    if not xtap_dir.exists():
+        xtap_dir.mkdir()
+        (xtap_dir / 'secret').write_text('test-token')
+    env = {**os.environ,
+           'HOME': str(tmp_path),
+           'XTAP_DAEMON_PORT': str(port),
+           'XTAP_OUTPUT_DIR': str(tmp_path / 'out'),
+           **(extra_env or {})}
+    daemon_py = os.path.join(
+        os.path.dirname(os.path.abspath(xtap_daemon.__file__)), 'xtap_daemon.py')
+    proc = subprocess.Popen([sys.executable, daemon_py], env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                            text=True)
+    stderr_lines = []
+    threading.Thread(
+        target=lambda: stderr_lines.extend(proc.stderr), daemon=True).start()
+    deadline = time.time() + 10
+    while not any('Listening' in line for line in stderr_lines):
+        if proc.poll() is not None:
+            pytest.fail(f'daemon exited early: {"".join(stderr_lines)}')
+        if time.time() > deadline:
+            proc.kill()
+            pytest.fail(f'daemon never started: {"".join(stderr_lines)}')
+        time.sleep(0.05)
+    return proc, port, stderr_lines
+
+
 class TestSignalShutdown:
 
     @pytest.mark.skipif(platform.system() == 'Windows', reason='POSIX signals only')
@@ -520,30 +583,8 @@ class TestSignalShutdown:
         """server.shutdown() invoked directly inside a signal handler runs on
         the same thread as serve_forever() and deadlocks — launchd/systemd
         then SIGKILLs mid-write. The daemon must exit cleanly within 5s."""
-        port = _free_port()
-        (tmp_path / '.xtap').mkdir()
-        (tmp_path / '.xtap' / 'secret').write_text('test-token')
-        env = {**os.environ,
-               'HOME': str(tmp_path),
-               'XTAP_DAEMON_PORT': str(port),
-               'XTAP_OUTPUT_DIR': str(tmp_path / 'out')}
-        daemon_py = os.path.join(
-            os.path.dirname(os.path.abspath(xtap_daemon.__file__)), 'xtap_daemon.py')
-        proc = subprocess.Popen([sys.executable, daemon_py], env=env,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                                text=True)
-        stderr_lines = []
-        threading.Thread(
-            target=lambda: stderr_lines.extend(proc.stderr), daemon=True).start()
+        proc, _port, _stderr = _start_daemon(tmp_path)
         try:
-            deadline = time.time() + 10
-            while not any('Listening' in line for line in stderr_lines):
-                if proc.poll() is not None:
-                    pytest.fail(f'daemon exited early: {"".join(stderr_lines)}')
-                if time.time() > deadline:
-                    pytest.fail(f'daemon never started: {"".join(stderr_lines)}')
-                time.sleep(0.05)
-
             proc.send_signal(signal.SIGTERM)
             try:
                 proc.wait(timeout=5)
@@ -561,33 +602,13 @@ class TestSignalShutdown:
         joins it on shutdown. Without a socket timeout on DaemonHandler that
         join blocks until launchd/systemd SIGKILLs mid-write. The handler
         timeout must let the idle thread expire so shutdown still completes."""
-        port = _free_port()
-        (tmp_path / '.xtap').mkdir()
-        (tmp_path / '.xtap' / 'secret').write_text('test-token')
-        env = {**os.environ,
-               'HOME': str(tmp_path),
-               'XTAP_DAEMON_PORT': str(port),
-               'XTAP_OUTPUT_DIR': str(tmp_path / 'out'),
-               # Short so the test is fast; the real default is 15s.
-               'XTAP_CONN_TIMEOUT_S': '2'}
-        daemon_py = os.path.join(
-            os.path.dirname(os.path.abspath(xtap_daemon.__file__)), 'xtap_daemon.py')
-        proc = subprocess.Popen([sys.executable, daemon_py], env=env,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                                text=True)
-        stderr_lines = []
-        threading.Thread(
-            target=lambda: stderr_lines.extend(proc.stderr), daemon=True).start()
+        # Short conn timeout so the test is fast (real default 15s). Long
+        # shutdown grace so this test pins the SOCKET-timeout path, not the
+        # force-exit backstop.
+        proc, port, _stderr = _start_daemon(
+            tmp_path, {'XTAP_CONN_TIMEOUT_S': '2', 'XTAP_SHUTDOWN_GRACE_S': '30'})
         idle = None
         try:
-            deadline = time.time() + 10
-            while not any('Listening' in line for line in stderr_lines):
-                if proc.poll() is not None:
-                    pytest.fail(f'daemon exited early: {"".join(stderr_lines)}')
-                if time.time() > deadline:
-                    pytest.fail(f'daemon never started: {"".join(stderr_lines)}')
-                time.sleep(0.05)
-
             # Open a connection and send nothing — the handler thread blocks in
             # readline() waiting for a request line that never comes.
             idle = socket.create_connection(('127.0.0.1', port), timeout=5)
@@ -603,6 +624,50 @@ class TestSignalShutdown:
         finally:
             if idle is not None:
                 idle.close()
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+
+    @pytest.mark.skipif(platform.system() == 'Windows', reason='POSIX signals only')
+    def test_trickle_connection_does_not_block_shutdown(self, tmp_path):
+        """The per-read socket timeout does NOT bound a peer that trickles one
+        byte per read window — that thread stays alive indefinitely. The
+        SHUTDOWN_GRACE_S backstop must force-exit the daemon anyway instead of
+        letting server_close() join the trickle thread until SIGKILL."""
+        proc, port, stderr_lines = _start_daemon(
+            tmp_path, {'XTAP_CONN_TIMEOUT_S': '1', 'XTAP_SHUTDOWN_GRACE_S': '2'})
+        stop_trickle = threading.Event()
+        trickle_sock = None
+        try:
+            trickle_sock = socket.create_connection(('127.0.0.1', port), timeout=5)
+
+            def trickle(sock):
+                # One header byte every 0.3s — each byte resets the 1s
+                # per-read timeout, so the handler thread never times out.
+                sock.sendall(b'P')
+                while not stop_trickle.wait(0.3):
+                    try:
+                        sock.sendall(b'X')
+                    except OSError:
+                        return
+
+            t = threading.Thread(target=trickle, args=(trickle_sock,), daemon=True)
+            t.start()
+            time.sleep(0.5)  # ensure the handler thread is mid-read
+
+            proc.send_signal(signal.SIGTERM)
+            try:
+                # 2s grace + margin. Without the backstop this hangs forever.
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pytest.fail('trickle connection blocked shutdown — the '
+                            'SHUTDOWN_GRACE_S force-exit backstop is not working')
+            assert any('grace' in line for line in stderr_lines), \
+                'force-exit path must log that the grace period expired'
+        finally:
+            stop_trickle.set()
+            if trickle_sock is not None:
+                trickle_sock.close()
             if proc.poll() is None:
                 proc.kill()
                 proc.wait(timeout=5)

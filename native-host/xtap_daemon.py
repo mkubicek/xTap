@@ -28,24 +28,33 @@ MAX_DRAIN_SIZE = 64 * 1024 * 1024  # cap bytes drained from an oversized request
 MAX_DRAIN_IDLE_TIMEOUT_S = 0.25  # don't hang on clients that declare a body and send none
 
 
-def _conn_timeout_s():
-    # Per-connection socket timeout (see DaemonHandler.timeout). Default 15s:
-    # above the extension's 10s client timeout (HTTP_TIMEOUT_MS) so a legit
-    # localhost request is never cut off, and below launchd's ~20s SIGTERM->
-    # SIGKILL window so an idle connection can't push shutdown past it. Always
-    # finite — bad/<=0 values fall back to the default rather than disabling it
-    # (disabling would reintroduce the shutdown-hang this guards against).
-    raw = (os.environ.get('XTAP_CONN_TIMEOUT_S') or '').strip()
+def _env_timeout_s(name, default):
+    # Always finite — bad/<=0 values fall back to the default rather than
+    # disabling the timeout (disabling would reintroduce the shutdown-hang
+    # these guards exist to prevent).
+    raw = (os.environ.get(name) or '').strip()
     if not raw:
-        return 15.0
+        return default
     try:
         value = float(raw)
     except ValueError:
-        return 15.0
-    return value if value > 0 else 15.0
+        return default
+    return value if value > 0 else default
 
 
-CONN_TIMEOUT_S = _conn_timeout_s()
+# Per-connection socket timeout (see DaemonHandler.timeout). Default 15s:
+# above the extension's 10s client timeout (HTTP_TIMEOUT_MS) so a legit
+# localhost request is never cut off, and below launchd's ~20s SIGTERM->
+# SIGKILL window so an idle connection can't push shutdown past it.
+CONN_TIMEOUT_S = _env_timeout_s('XTAP_CONN_TIMEOUT_S', 15.0)
+
+# Bounded shutdown join. The socket timeout above is per blocking read, not a
+# total request deadline — a trickle peer sending one byte per read window
+# keeps its handler thread alive forever, and server_close() would join it
+# indefinitely. After this grace period the daemon force-exits: legitimate
+# JSONL writes finish in well under a second, so only stuck peers are cut off,
+# and 10s stays below launchd's ~20s SIGTERM->SIGKILL escalation.
+SHUTDOWN_GRACE_S = _env_timeout_s('XTAP_SHUTDOWN_GRACE_S', 10.0)
 XTAP_DIR = os.path.expanduser('~/.xtap')
 XTAP_SECRET = os.path.join(XTAP_DIR, 'secret')
 
@@ -90,12 +99,14 @@ class DaemonHandler(BaseHTTPRequestHandler):
     # Socket timeout for stalled/idle connections. Required by the
     # daemon_threads = False change above: without it, a peer that opens a
     # connection to 127.0.0.1 and never finishes sending its request line/body
-    # (a port scanner, a stalled fetch, an unauthenticated slowloris — this is
-    # pre-auth, so the token can't gate it) parks a non-daemon handler thread
-    # in a blocking read forever. server_close() then blocks joining that
-    # thread on shutdown until launchd/systemd escalates to SIGKILL, killing
-    # in-flight JSONL writes — the exact failure daemon_threads = False exists
-    # to prevent. A socket timeout makes the read raise and the thread exit.
+    # (a port scanner, a stalled fetch — this is pre-auth, so the token can't
+    # gate it) parks a non-daemon handler thread in a blocking read forever.
+    # server_close() then blocks joining that thread on shutdown until
+    # launchd/systemd escalates to SIGKILL, killing in-flight JSONL writes —
+    # the exact failure daemon_threads = False exists to prevent. The timeout
+    # makes each blocking read raise so idle threads exit. It is per-read, not
+    # a total deadline — a trickle sender can still hold a thread, which is
+    # why shutdown is additionally bounded by SHUTDOWN_GRACE_S in main().
     timeout = CONN_TIMEOUT_S
 
     def log_message(self, format, *args):
@@ -396,9 +407,24 @@ def main():
 
     log_info(f'Listening on {BIND_HOST}:{BIND_PORT}')
     server.serve_forever()
-    # Join in-flight non-daemon handler threads before exiting so any active
-    # JSONL write can finish cleanly.
-    server.server_close()
+    # Join in-flight non-daemon handler threads so any active JSONL write can
+    # finish cleanly — but bound the join: a peer that trickles bytes defeats
+    # the per-read socket timeout and would pin server_close() forever,
+    # holding the SIGTERM window open until launchd/systemd SIGKILLs us
+    # mid-write anyway. Force-exit after the grace period instead: real
+    # writes have long finished; only stuck peers are cut off.
+    closer = threading.Thread(target=server.server_close, daemon=True)
+    closer.start()
+    closer.join(SHUTDOWN_GRACE_S)
+    if closer.is_alive():
+        log_info(f'Shutdown grace ({SHUTDOWN_GRACE_S}s) expired with handler '
+                 f'threads still running — forcing exit')
+        sys.stderr.flush()
+        try:
+            sys.stdout.flush()
+        except (OSError, ValueError):
+            pass
+        os._exit(0)
     log_info('Shutdown complete')
 
 
