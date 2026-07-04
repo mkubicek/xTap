@@ -1310,6 +1310,28 @@ class TestLoadSeenIdsRobustness:
         xtap_core.load_seen_ids(str(tmp_path))
         assert 'icloud' in capsys.readouterr().err.lower()
 
+    def test_unreadable_file_warns_and_continues(self, tmp_path, monkeypatch, capsys):
+        """A file whose open() raises OSError (permissions, iCloud eviction
+        race) must not crash daemon startup — warn and keep the IDs from the
+        readable files."""
+        good = tmp_path / 'tweets-2024-01-15.jsonl'
+        good.write_text(json.dumps({'id': '111'}) + '\n', encoding='utf-8')
+        bad = tmp_path / 'tweets-2024-01-14.jsonl'
+        bad.write_text(json.dumps({'id': '222'}) + '\n', encoding='utf-8')
+
+        real_open = builtins.open
+
+        def deny_bad(file, *args, **kwargs):
+            if str(file) == str(bad):
+                raise PermissionError(13, 'Permission denied', str(file))
+            return real_open(file, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, 'open', deny_bad)
+        assert xtap_core.load_seen_ids(str(tmp_path)) == {'111'}
+        err = capsys.readouterr().err
+        assert 'cannot read' in err
+        assert str(bad) in err
+
 
 # ---------------------------------------------------------------------------
 # Per-directory dedup (switching outputDir must not suppress tweets)
@@ -1529,6 +1551,45 @@ class TestDownloadDirect:
         assert 'urllib.request.urlopen' not in src
 
 
+class TestVideoMaxBytes:
+    """XTAP_MAX_VIDEO_MB boundary values: 0/negative disable the cap,
+    non-numeric falls back to the 500 MB default. A regression here silently
+    re-enables the cap for users who set 0, or disables it for everyone."""
+
+    def test_unset_uses_default(self, monkeypatch):
+        monkeypatch.delenv('XTAP_MAX_VIDEO_MB', raising=False)
+        assert xtap_core._video_max_bytes() == \
+            xtap_core.DEFAULT_MAX_VIDEO_MB * 1024 * 1024
+
+    def test_zero_disables_cap(self, monkeypatch):
+        monkeypatch.setenv('XTAP_MAX_VIDEO_MB', '0')
+        assert xtap_core._video_max_bytes() is None
+
+    def test_negative_disables_cap(self, monkeypatch):
+        monkeypatch.setenv('XTAP_MAX_VIDEO_MB', '-1')
+        assert xtap_core._video_max_bytes() is None
+
+    def test_non_numeric_falls_back_to_default(self, monkeypatch, capsys):
+        monkeypatch.setenv('XTAP_MAX_VIDEO_MB', 'lots')
+        assert xtap_core._video_max_bytes() == \
+            xtap_core.DEFAULT_MAX_VIDEO_MB * 1024 * 1024
+        assert 'XTAP_MAX_VIDEO_MB' in capsys.readouterr().err
+
+    def test_disabled_cap_allows_body_over_default_chunks(self, tmp_path, monkeypatch):
+        """With the cap disabled, download_direct must stream a body larger
+        than any Content-Length check would allow, not raise mid-stream."""
+        monkeypatch.setenv('XTAP_MAX_VIDEO_MB', '0')
+        body = b'v' * (2 * xtap_core.VIDEO_CHUNK_SIZE + 17)
+        monkeypatch.setattr(
+            xtap_core._NO_REDIRECT_OPENER, 'open',
+            lambda *a, **kw: _FakeResponse(body, content_length=len(body)))
+        path = xtap_core.download_direct(
+            'https://video.twimg.com/ext_tw_video/1/pu/vid/x.mp4',
+            '42', str(tmp_path))
+        assert os.path.getsize(path) == len(body)
+        assert not os.path.exists(path + '.part')
+
+
 class TestVideoDownloadValidation:
     def test_start_download_rejects_offsite_tweet_url_before_registering(self, tmp_path):
         with xtap_core._downloads_lock:
@@ -1567,16 +1628,19 @@ class TestVideoDownloadValidation:
         monkeypatch.setattr(xtap_core, '_ytdlp_path', '/usr/bin/yt-dlp')
         monkeypatch.setattr(xtap_core.subprocess, 'Popen', FakeProc)
 
-        xtap_core._download_with_ytdlp(
-            download_id,
-            'https://x.com/user/status/42',
-            str(tmp_path),
-            post_date='/tmp/pwn')
+        try:
+            xtap_core._download_with_ytdlp(
+                download_id,
+                'https://x.com/user/status/42',
+                str(tmp_path),
+                post_date='/tmp/pwn')
 
-        output_template = captured['cmd'][captured['cmd'].index('-o') + 1]
-        staging_dir = os.path.realpath(str(tmp_path / '.downloading'))
-        assert os.path.commonpath([staging_dir, os.path.realpath(output_template)]) == staging_dir
-        assert os.path.basename(output_template).startswith('%(title)s [42]')
-
-        with xtap_core._downloads_lock:
-            xtap_core._downloads.pop(download_id, None)
+            output_template = captured['cmd'][captured['cmd'].index('-o') + 1]
+            staging_dir = os.path.realpath(str(tmp_path / '.downloading'))
+            assert os.path.commonpath([staging_dir, os.path.realpath(output_template)]) == staging_dir
+            assert os.path.basename(output_template).startswith('%(title)s [42]')
+        finally:
+            # A failed assertion must not leak the entry into shared module
+            # state for subsequent tests.
+            with xtap_core._downloads_lock:
+                xtap_core._downloads.pop(download_id, None)

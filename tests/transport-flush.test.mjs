@@ -20,7 +20,10 @@ const testSource = bgSource
   .replace(/\/\/ --- Init ---[\s\S]*$/,
     `var _internals = {
       flush, sendToHost, saveState, enqueueTweets,
-      readyResolve,
+      readyResolve, debugLog,
+      get activeDownloads() { return activeDownloads; },
+      get logBuffer() { return logBuffer; },
+      set debugLogging(v) { debugLogging = v; },
       get buffer() { return buffer; },
       set buffer(v) { buffer = v; },
       get seenIds() { return seenIds; },
@@ -479,6 +482,81 @@ describe('flush in-flight durability', () => {
       assert.ok(sent.has(`t${i}`), `t${i} was discarded unsent by the ack removal`);
     }
     assert.equal(env.buffer.length, 0, 'queue must fully drain');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Download status cleanup (daemon restart loses download state -> 'unknown')
+// ---------------------------------------------------------------------------
+
+describe('download status cleanup', () => {
+  function statusEnv(daemonStatus) {
+    const env = setup();
+    env.transport = 'http';
+    env.httpToken = 't';
+    env.httpPort = 17381;
+    env.fetchHolder.impl = async () => okResponse({ ok: true, status: daemonStatus });
+    env.activeDownloads.set('tweet-1', 'dl-1');
+    return env;
+  }
+
+  for (const finished of ['done', 'error', 'unknown']) {
+    it(`'${finished}' clears the activeDownloads entry`, async () => {
+      const env = statusEnv(finished);
+      const resp = await env.sendMessage({ type: 'DOWNLOAD_STATUS', downloadId: 'dl-1' });
+      assert.equal(resp.status, finished);
+      assert.equal(env.activeDownloads.size, 0,
+        `'${finished}' must stop the popup from resuming a dead download`);
+    });
+  }
+
+  it("'downloading' keeps the activeDownloads entry", async () => {
+    const env = statusEnv('downloading');
+    const resp = await env.sendMessage({ type: 'DOWNLOAD_STATUS', downloadId: 'dl-1' });
+    assert.equal(resp.status, 'downloading');
+    assert.equal(env.activeDownloads.get('tweet-1'), 'dl-1',
+      'an in-progress download must stay resumable');
+  });
+
+  it('does not clear entries for a different downloadId', async () => {
+    const env = statusEnv('done');
+    env.activeDownloads.set('tweet-2', 'dl-2');
+    await env.sendMessage({ type: 'DOWNLOAD_STATUS', downloadId: 'dl-1' });
+    assert.equal(env.activeDownloads.has('tweet-1'), false);
+    assert.equal(env.activeDownloads.get('tweet-2'), 'dl-2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Debug log buffering (cap + stringify fallback)
+// ---------------------------------------------------------------------------
+
+describe('debug log buffering', () => {
+  it('caps logBuffer at MAX_LOG_BUFFER, dropping oldest lines', () => {
+    const env = setup();
+    env.debugLogging = true;
+    for (let i = 0; i < 5050; i++) env.debugLog('LOG', [`line-${i}`]);
+    assert.equal(env.logBuffer.length, 5000,
+      'an unreachable daemon must not grow the log buffer unboundedly');
+    assert.ok(env.logBuffer[0].includes('line-50'), 'oldest lines are dropped first');
+    assert.ok(env.logBuffer[4999].includes('line-5049'), 'newest lines are kept');
+  });
+
+  it('falls back to String() when an argument cannot be JSON.stringified', () => {
+    const env = setup();
+    env.debugLogging = true;
+    const circular = {};
+    circular.self = circular;
+    env.debugLog('LOG', [circular]);
+    assert.equal(env.logBuffer.length, 1, 'a circular argument must not throw');
+    assert.ok(env.logBuffer[0].includes('[object Object]'),
+      'unstringifiable args fall back to String(a)');
+  });
+
+  it('buffers nothing while debug logging is off', () => {
+    const env = setup();
+    env.debugLog('LOG', ['dropped']);
+    assert.equal(env.logBuffer.length, 0);
   });
 });
 
