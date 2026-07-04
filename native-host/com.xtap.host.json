@@ -1,6 +1,6 @@
 {
   "name": "com.xtap.host",
-  "description": "xTap native messaging host — writes captured tweets to JSONL",
+  "description": "xTap native messaging host — passes the HTTP daemon auth token to the extension",
   "path": "/path/to/xtap_host.py",
   "type": "stdio",
   "allowed_origins": ["chrome-extension://EXTENSION_ID/"]

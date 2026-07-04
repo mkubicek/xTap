@@ -186,6 +186,10 @@ function pollDownload(downloadId) {
       } else if (resp.status === 'error') {
         clearInterval(pollTimer);
         showDownloadResult('error', resp.error || 'Download failed');
+      } else if (resp.status === 'unknown') {
+        // Daemon restarted and lost the download state — stop polling.
+        clearInterval(pollTimer);
+        showDownloadResult('error', 'Download state lost — try again');
       }
     });
   }, 500);

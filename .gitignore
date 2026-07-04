@@ -15,3 +15,4 @@ tests/fixtures/private-raw/*
 tests/e2e/.extension-out/
 tests/e2e/certs/
 !tests/e2e/test-extension.pem
+native-host/*.generated.json

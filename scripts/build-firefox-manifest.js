@@ -23,9 +23,8 @@ manifest.browser_specific_settings = {
   }
 };
 
-fs.writeFileSync(
-  path.join(root, 'manifest.firefox.json'),
-  JSON.stringify(manifest, null, 2) + '\n'
-);
+// Optional output path override (used by tests to diff without overwriting)
+const outPath = process.argv[2] || path.join(root, 'manifest.firefox.json');
+fs.writeFileSync(outPath, JSON.stringify(manifest, null, 2) + '\n');
 
-console.log('Generated manifest.firefox.json');
+console.log(`Generated ${outPath}`);

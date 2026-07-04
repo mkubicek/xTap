@@ -58,11 +58,14 @@ media-manifest.jsonl     (when image download enabled — append-only download l
 - **Environment detection:** `isDevMode = !chrome.runtime.getManifest().update_url` — packed CWS extensions have `update_url`, unpacked don't. Used to switch seenIds storage between session (dev) and local (production).
 - **Volatile dev cache:** In dev mode (unpacked), `seenIds` is stored in `chrome.storage.session`, which clears on extension reload. This eliminates the need to manually clear storage during development. Production behavior is unchanged (persisted to `chrome.storage.local`).
 - **Dedup in service worker:** Multiple tabs feed the same service worker. `seenIds` Set (max 50,000, FIFO eviction) prevents duplicates. In production, persisted to `chrome.storage.local` across sessions; in dev mode, uses volatile `chrome.storage.session`. Both host and daemon also load seen IDs from existing JSONL files on startup.
+- **Image backfill bypass:** When image download is enabled, duplicate tweets with photo URLs may be forwarded to the daemon once per service-worker session so skipped images can be downloaded. These forwards emit `IMAGE_BACKFILL` trace events and do not increment `sessionCount` or `allTimeCount`; toggling image download from off to on clears the session-only backfill cache so tweets can be rechecked.
 - **Jittered flush:** Batch flush uses `setTimeout` with randomized interval (30s base + up to 50% jitter = 30–45s), re-randomized each cycle. Avoids clockwork-regular patterns.
 - **Path validation:** When the user sets a custom output directory, the service worker sends a `TEST_PATH` request to the HTTP daemon, which attempts `makedirs` + write/delete of a temp file before accepting the path.
 - **Error resilience:** The native host logs crashes to `~/.xtap/host-error.log` with Python version and traceback. The HTTP daemon returns error status codes and logs startup diagnostics (Python version, output dir, token status). When the daemon is unreachable, the extension shows a red "!" badge and buffers tweets until the next successful reprobe (30s cooldown). The popup auto-refreshes every 2 seconds to reflect transport state changes.
 - **Daemon debug logging:** Set `XTAP_LOG_LEVEL=debug` to get per-request logging (method, path, duration, tweet counts, tracebacks). Configured via environment variable in the service template (launchd/systemd). Re-run `install.sh` after changing.
 - **Image download tuning (env vars, all optional):** `XTAP_IMAGE_DELAY_MS` (default 100) sets the inter-request delay for the background image worker. `XTAP_MAX_FILE_MB` (default 50) caps the size of a single image; the worker aborts mid-stream and deletes the `.part` file when exceeded. `XTAP_MAX_MEDIA_MB` (default unset = unlimited) caps the cumulative bytes downloaded per process; further jobs log `skipped:quota`. Bad values fall back to defaults with a stderr warning instead of crashing the daemon.
+- **Video download tuning (env vars, optional):** `XTAP_MAX_VIDEO_MB` (default 500) caps the direct MP4 fallback download size and deletes the `.part` file if exceeded; set `0` or less to disable the cap. Bad values fall back to the default with a stderr warning.
+- **Daemon connection lifecycle (env vars, optional):** `XTAP_CONN_TIMEOUT_S` (default 15) is the per-connection socket timeout on `DaemonHandler` — required because handler threads are non-daemon (`daemon_threads = False`) and `server_close()` joins them at shutdown; without it one idle connection blocks shutdown until SIGKILL. The timeout is per blocking read, not a total request deadline, so `XTAP_SHUTDOWN_GRACE_S` (default 10) additionally bounds the shutdown join and force-exits if a trickle peer keeps a handler alive. Both always resolve to a finite positive value — bad or `<=0` input falls back to the default.
 
 ## Stealth Constraints
 
@@ -73,14 +76,14 @@ media-manifest.jsonl     (when image download enabled — append-only download l
 3. **No expando properties** — XHR URL tracking uses a `WeakMap`, never attaches properties to instances.
 4. **No DOM footprint** — no injected elements, no visible page modifications. The only transient artifact is the `<meta name="__cfg">` tag, removed within milliseconds by the bridge script.
 5. **No console output in page context** — all logging happens in the service worker, which runs outside the page's JavaScript environment.
-6. **Minimal permissions** — only `storage` and `nativeMessaging`. Host permissions scoped to `x.com`, `twitter.com`, and `127.0.0.1` (local daemon only). No `webRequest`, no `tabs`, no `scripting`, no web-accessible resources. The debug dashboard is an internal extension page (`chrome-extension://` origin), not a web-accessible resource.
+6. **Minimal permissions** — only `storage`, `nativeMessaging`, and `alarms`. Host permissions scoped to `x.com`, `twitter.com`, and `127.0.0.1` (local daemon only). No `webRequest`, no `tabs`, no `scripting`, no web-accessible resources. The debug dashboard is an internal extension page (`chrome-extension://` origin), not a web-accessible resource.
 7. **Random event channel** — per-page-load name, meta tag removed immediately after reading.
 8. **Only `open()` patched on XHR** — `send()` is not patched, so non-GraphQL XHR calls have clean stack traces.
 
 **Any change that adds network requests to X/Twitter domains must be rejected.**
 
 **Carve-outs (opt-in only, daemon-side, off by default):**
-- **Video download** (`/download-video`) — user-initiated via popup button; calls `pbs.twimg.com` / `video.twimg.com` and runs yt-dlp.
+- **Video download** (`/download-video`) — user-initiated via popup button; requires an `https://x.com/.../status/<id>` or `https://twitter.com/.../status/<id>` URL; calls `pbs.twimg.com` / `video.twimg.com` for direct MP4 fallback and runs yt-dlp when available.
 - **Image download** (`image_download:true` on `/tweets`) — opt-in toggle in popup. The daemon fetches `pbs.twimg.com` photos in a single background worker. Hostname allowlist enforced; redirects blocked; per-file size cap; never enabled by default.
 
 The browser-side capture path stays passive. These carve-outs run on the daemon, not the extension, so the page itself never originates the request.

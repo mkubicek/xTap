@@ -157,8 +157,10 @@ h2 {
 }
 
 .status-ACCEPTED { color: #4ade80; }
+.status-IMAGE_BACKFILL { color: #60a5fa; }
 .status-DEDUPLICATED { color: #8b98a5; }
 .status-PARSER_ERROR { color: #f87171; }
+.status-DROPPED_OVERSIZED { color: #f87171; }
 
 /* Sandbox */
 .sandbox-row {

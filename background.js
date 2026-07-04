@@ -8,6 +8,7 @@ const FLUSH_INTERVAL_MS = 30_000;
 const MAX_SEEN_IDS = 50_000;
 const HTTP_TIMEOUT_MS = 10_000;
 const MAX_BUFFER_SIZE = 2000;
+const IMAGE_BACKFILL_FLAG = '__xtap_image_backfill';
 
 let captureEnabled = true;
 let buffer = [];
@@ -184,11 +185,20 @@ const _origLog = console.log;
 const _origWarn = console.warn;
 const _origError = console.error;
 
+const MAX_LOG_BUFFER = 5000;
+
 function debugLog(level, args) {
   if (!debugLogging) return;
   const ts = new Date().toISOString();
-  const text = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+  const text = args.map(a => {
+    if (typeof a === 'string') return a;
+    try { return JSON.stringify(a); } catch { return String(a); }
+  }).join(' ');
   logBuffer.push(`${ts} [${level}] ${text}`);
+  // Cap so an unreachable daemon can't grow the buffer unboundedly.
+  if (logBuffer.length > MAX_LOG_BUFFER) {
+    logBuffer.splice(0, logBuffer.length - MAX_LOG_BUFFER);
+  }
 }
 
 console.log = (...args) => { _origLog(...args); debugLog('LOG', args); };
@@ -212,7 +222,7 @@ async function httpFetch(method, path, body) {
   opts.signal = controller.signal;
   try {
     const resp = await fetch(url, opts);
-    return await resp.json();
+    return { status: resp.status, data: await resp.json() };
   } finally {
     clearTimeout(timeout);
   }
@@ -290,6 +300,7 @@ async function initTransport() {
       httpToken = cached.httpToken;
       httpPort = cached.httpPort;
       transport = 'http';
+      updateBadge(); // clear a stale '!' from a previous daemon-down session
       console.log('[xTap] Using HTTP transport (cached token)');
       return;
     }
@@ -304,6 +315,7 @@ async function initTransport() {
       httpPort = result.port;
       transport = 'http';
       await chrome.storage.local.set({ httpToken, httpPort });
+      updateBadge(); // clear a stale '!' from a previous daemon-down session
       console.log('[xTap] Using HTTP transport (token from native host)');
       return;
     }
@@ -353,7 +365,19 @@ async function sendToHost(msg) {
   }
 
   try {
-    return await httpFetch('POST', path, body);
+    const { status, data } = await httpFetch('POST', path, body);
+    if (status === 401 || status === 403) {
+      // The daemon is alive but our token is stale (e.g. rotated by a
+      // reinstall). Reset the transport so the next flush re-probes and
+      // fetches a fresh token via the native host — otherwise we'd retry
+      // the same dead credentials forever.
+      console.error(`[xTap] Daemon rejected credentials (HTTP ${status}), resetting transport`);
+      transport = 'none';
+      updateTransportBadge();
+      return null;
+    }
+    if (data && typeof data === 'object') data.httpStatus = status;
+    return data;
   } catch (e) {
     console.error('[xTap] HTTP send failed:', e.message);
     transport = 'none';
@@ -367,6 +391,31 @@ async function sendToHost(msg) {
 function scheduledFlush() {
   if (buffer.length > 0 || logBuffer.length > 0) flush();
 }
+
+// The setTimeout flush timer dies with the service worker (MV3 kills it ~30s
+// after the last event), stranding the final partial batch until a later
+// session. A chrome.alarms backstop survives SW termination and wakes the SW
+// to deliver whatever is still buffered, then clears itself.
+const FLUSH_ALARM = 'xtap-flush';
+let flushAlarmSet = false;
+
+function ensureFlushAlarm() {
+  if (flushAlarmSet || !chrome.alarms) return;
+  flushAlarmSet = true;
+  chrome.alarms.create(FLUSH_ALARM, { periodInMinutes: 1 });
+}
+
+chrome.alarms?.onAlarm.addListener((alarm) => {
+  if (alarm.name !== FLUSH_ALARM) return;
+  (async () => {
+    await ready;
+    if (buffer.length > 0 || logBuffer.length > 0) await flush();
+    if (buffer.length === 0 && logBuffer.length === 0) {
+      chrome.alarms.clear(FLUSH_ALARM);
+      flushAlarmSet = false;
+    }
+  })();
+});
 
 async function flushLogs() {
   if (logBuffer.length === 0) return;
@@ -426,6 +475,32 @@ async function reprobeTransport() {
   return false;
 }
 
+// Cap per POST so a backlog (e.g. after a daemon outage) can't exceed the
+// daemon's 10 MB body limit and wedge in a 413-retry loop.
+const MAX_TWEETS_PER_POST = 200;
+let flushInFlight = false;
+
+function tweetForHost(tweet) {
+  if (!tweet || !tweet[IMAGE_BACKFILL_FLAG]) return tweet;
+  const { [IMAGE_BACKFILL_FLAG]: _ignored, ...clean } = tweet;
+  return clean;
+}
+
+function isBufferedImageBackfill(tweet) {
+  return !!(tweet && tweet[IMAGE_BACKFILL_FLAG]);
+}
+
+// Remove the delivered/dropped tweets by object identity, never by position.
+// An overflow eviction in enqueueTweets can splice the buffer front while
+// flush() awaits the POST, so buffer[0..batch.length) may no longer be the
+// tweets we sent — a positional splice would then discard never-sent tweets
+// (their ids are already in seenIds, so the loss is permanent). Reassigning
+// `buffer` is safe: no other code runs between the await and here.
+function removeDelivered(batch) {
+  const delivered = new Set(batch);
+  buffer = buffer.filter(t => !delivered.has(t));
+}
+
 async function flush() {
   if (buffer.length === 0 && logBuffer.length === 0) return;
 
@@ -433,25 +508,59 @@ async function flush() {
     if (!(await reprobeTransport())) return;
   }
 
-  if (buffer.length > 0) {
-    const batch = buffer.splice(0);
-    const message = { tweets: batch };
-    if (outputDir) message.outputDir = outputDir;
-    if (imageDownload) message.imageDownload = true;
-
+  if (buffer.length > 0 && !flushInFlight) {
+    flushInFlight = true;
     try {
-      const resp = await sendToHost(message);
-      if (!resp || !resp.ok) {
-        console.error('[xTap] Host rejected tweets:', resp?.error || 'no response');
-        buffer.unshift(...batch);
-        await saveState();
-      } else {
+      // Send from the front without removing — the batch stays in `buffer`
+      // (and thus in persisted state) until the daemon acks, so SW death
+      // mid-POST can't lose it. The daemon dedups by ID, so a death after
+      // the POST but before the ack only costs a duplicate send, not data.
+      let postCap = MAX_TWEETS_PER_POST;
+      let splitRemaining = 0;
+      while (buffer.length > 0) {
+        const batch = buffer.slice(0, postCap);
+        const message = { tweets: batch.map(tweetForHost) };
+        if (outputDir) message.outputDir = outputDir;
+        if (imageDownload) message.imageDownload = true;
+
+        const resp = await sendToHost(message);
+        if (!resp || !resp.ok) {
+          // 413: the batch is too large in bytes (count cap doesn't bound
+          // huge article tweets). Retrying it unchanged would wedge the
+          // queue forever — halve and retry; a single tweet that alone
+          // exceeds the daemon's body limit can never be delivered, so
+          // drop it with a trace event.
+          if (resp?.httpStatus === 413) {
+            if (batch.length > 1) {
+              postCap = Math.max(1, Math.floor(batch.length / 2));
+              splitRemaining = batch.length;
+              continue;
+            }
+            const oversized = batch[0];
+            removeDelivered([oversized]);
+            console.error(`[xTap] Dropping tweet ${oversized.id}: exceeds daemon body limit`);
+            emitTraceEvent({ timestamp: Date.now(), endpoint: 'flush', tweetId: oversized.id, status: 'DROPPED_OVERSIZED', reason: 'single tweet exceeds daemon body limit' });
+            postCap = MAX_TWEETS_PER_POST; // only the fat batch pays the split cost
+            splitRemaining = 0;
+            await saveState();
+            continue;
+          }
+          // Anything else: batch stays buffered for the next flush.
+          console.error('[xTap] Host rejected tweets:', resp?.error || 'no response');
+          break;
+        }
+        removeDelivered(batch);
+        if (splitRemaining > 0) {
+          splitRemaining -= batch.length;
+          if (splitRemaining <= 0) {
+            postCap = MAX_TWEETS_PER_POST; // restore after a fat batch forced a split
+            splitRemaining = 0;
+          }
+        }
         await saveState();
       }
-    } catch (e) {
-      console.error('[xTap] Send failed, buffering tweets back:', e);
-      buffer.unshift(...batch);
-      await saveState();
+    } finally {
+      flushInFlight = false;
     }
   }
 
@@ -479,6 +588,10 @@ function emitTraceEvent(event) {
 
 function enqueueTweets(tweets, endpoint = 'unknown') {
   let newCount = 0;
+  let queuedCount = 0;
+  let backfillCount = 0;
+  let skippedCount = 0;
+  let droppedBackfillCount = 0;
   for (const tweet of tweets) {
     // Always cache for video lookup (even dupes — updates with latest data)
     if (tweet.id) {
@@ -490,13 +603,29 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
       }
     }
 
+    const wasSeen = !!(tweet.id && seenIds.has(tweet.id));
     if (!dedupTweet(tweet, seenIds, { imageBackfill: imageDownload, imageCheckedIds })) {
+      skippedCount++;
       emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'DEDUPLICATED', reason: 'seenIds' });
       continue;
     }
+
+    const isImageBackfill = wasSeen && !tweet.is_article;
+    if (isImageBackfill) {
+      backfillCount++;
+      tweet[IMAGE_BACKFILL_FLAG] = true;
+    } else {
+      newCount++;
+    }
     buffer.push(tweet);
-    newCount++;
-    emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: tweet.id, status: 'ACCEPTED', reason: null });
+    queuedCount++;
+    emitTraceEvent({
+      timestamp: Date.now(),
+      endpoint,
+      tweetId: tweet.id,
+      status: isImageBackfill ? 'IMAGE_BACKFILL' : 'ACCEPTED',
+      reason: null,
+    });
   }
 
   // FIFO eviction if seenIds grows too large
@@ -509,20 +638,31 @@ function enqueueTweets(tweets, endpoint = 'unknown') {
     imageCheckedIds = new Set(arr.slice(arr.length - MAX_SEEN_IDS));
   }
 
-  const dupeCount = tweets.length - newCount;
-  if (dupeCount > 0) {
-    console.log(`[xTap] Dedup: ${newCount} new, ${dupeCount} duplicates skipped (seenIds: ${seenIds.size})`);
-  }
-
   sessionCount += newCount;
   allTimeCount += newCount;
   updateBadge();
+  if (queuedCount > 0) ensureFlushAlarm();
 
   if (buffer.length > MAX_BUFFER_SIZE) {
-    const overflow = buffer.length - MAX_BUFFER_SIZE;
-    buffer.splice(0, overflow);
-    console.warn(`[xTap] Buffer overflow: dropped ${overflow} oldest tweets (cap: ${MAX_BUFFER_SIZE})`);
-    emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: null, status: 'BUFFER_OVERFLOW', reason: `dropped ${overflow}` });
+    let droppedOldestCount = 0;
+    while (buffer.length > MAX_BUFFER_SIZE) {
+      const backfillIndex = buffer.findIndex(isBufferedImageBackfill);
+      if (backfillIndex !== -1) {
+        const [dropped] = buffer.splice(backfillIndex, 1);
+        if (dropped?.id) imageCheckedIds.delete(dropped.id);
+        droppedBackfillCount++;
+      } else {
+        buffer.shift();
+        droppedOldestCount++;
+      }
+    }
+    const droppedTotal = droppedOldestCount + droppedBackfillCount;
+    console.warn(`[xTap] Buffer overflow: dropped ${droppedTotal} tweets (${droppedBackfillCount} image backfill, ${droppedOldestCount} oldest; cap: ${MAX_BUFFER_SIZE})`);
+    emitTraceEvent({ timestamp: Date.now(), endpoint, tweetId: null, status: 'BUFFER_OVERFLOW', reason: `dropped ${droppedTotal}` });
+  }
+
+  if (skippedCount > 0 || backfillCount > 0 || droppedBackfillCount > 0) {
+    console.log(`[xTap] Dedup: ${newCount} new, ${backfillCount} image backfill, ${skippedCount} duplicates skipped, ${droppedBackfillCount} backfill dropped (seenIds: ${seenIds.size})`);
   }
 }
 
@@ -658,7 +798,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         } else {
           await clearStagedPayload(stageKey);
         }
-        // Flush after WAL commit so buffer.splice in flush() can't race with
+        // Flush after WAL commit so acknowledged batch removal can't race with
         // the persist-then-clear sequence above.
         if (buffer.length >= BATCH_SIZE) flush();
       } catch (e) {
@@ -738,7 +878,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === 'SET_IMAGE_DOWNLOAD') {
+    const wasOff = !imageDownload;
     imageDownload = !!msg.imageDownload;
+    if (wasOff && imageDownload) imageCheckedIds.clear();
     chrome.storage.local.set({ imageDownload });
     sendResponse({ imageDownload });
     return true;
@@ -815,8 +957,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           type: 'DOWNLOAD_STATUS',
           downloadId: msg.downloadId,
         });
-        // Clean up finished downloads from active map
-        if (resp?.status === 'done' || resp?.status === 'error') {
+        // Clean up finished downloads from active map. 'unknown' means the
+        // daemon restarted and lost the download — stop resuming it.
+        if (resp?.status === 'done' || resp?.status === 'error' || resp?.status === 'unknown') {
           for (const [tid, did] of activeDownloads) {
             if (did === msg.downloadId) { activeDownloads.delete(tid); break; }
           }
@@ -845,6 +988,12 @@ restoreState().catch((e) => {
   readyResolve();
   updateBadge();
   await initTransport();
+  // Deliver anything restored/recovered right away — the SW may idle out
+  // before the first timer tick, and nothing else flushes at startup.
+  if (buffer.length > 0 || logBuffer.length > 0) {
+    if (buffer.length > 0) ensureFlushAlarm();
+    flush();
+  }
   function scheduleNextFlush() {
     const jitter = Math.random() * FLUSH_INTERVAL_MS * 0.5;
     flushTimer = setTimeout(() => { scheduledFlush(); scheduleNextFlush(); }, FLUSH_INTERVAL_MS + jitter);

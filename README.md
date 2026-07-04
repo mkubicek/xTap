@@ -34,7 +34,7 @@ xTap is a browser extension (Chrome + Firefox) that silently intercepts the Grap
 - **Structured output** — each tweet saved as a clean JSON object with author, metrics, media, and more
 - **Article support** — long-form X articles are captured when X returns the full body, with inline image references and Draft.js block structure
 - **Video download** — download videos from tweets using yt-dlp (or direct MP4 fallback) via the extension popup. Requires the HTTP daemon. **Note:** unlike passive capture, video downloads make additional network requests to X and are not stealth.
-- **Image download** — opt-in toggle in the popup ("Download images automatically") fetches photos from `pbs.twimg.com` to `<output_dir>/media/<tweet_id>/<filename>` as you browse. Daemon-side; rate-limited; logs to `media-manifest.jsonl`. **Note:** also not stealth — adds requests to the Twitter CDN.
+- **Image download** — opt-in toggle in the popup ("Download images automatically") fetches photos from `pbs.twimg.com` to `<output_dir>/media/<tweet_id>/<filename>` as you browse. If enabled after browsing, already-seen photo tweets are rechecked for media download without bumping the captured-tweet counter. Daemon-side; rate-limited; logs to `media-manifest.jsonl`. **Note:** also not stealth — adds requests to the Twitter CDN.
 - **Pause / resume** — click the extension icon to toggle capture on the fly
 - **Live counter** — badge on the extension icon shows tweets captured this session
 - **Multi-tab aware** — multiple X tabs feed into the same service worker with shared deduplication
@@ -102,7 +102,7 @@ Even though passive interception is inherently low-risk, xTap avoids leaving unn
 - **Random event channel** — the MAIN↔ISOLATED world bridge uses a `CustomEvent` with a per-page-load random name; the `<meta>` beacon that communicates the name is removed immediately after the bridge reads it
 - **Zero DOM footprint** — no injected UI, no page modifications; everything lives in the popup and service worker
 - **Zero console output in page context** — all logging happens in the service worker and parser, which run outside the page's JavaScript environment
-- **Minimal permissions** — only `storage` and `nativeMessaging`; no `webRequest`, no host permissions beyond `x.com` / `twitter.com` / `127.0.0.1`
+- **Minimal permissions** — only `storage`, `nativeMessaging`, and `alarms` (the alarm wakes the service worker to deliver buffered tweets; it is not observable by web pages); no `webRequest`, no host permissions beyond `x.com` / `twitter.com` / `127.0.0.1`
 - **Jittered flush timing** — batches are flushed on a randomized interval to avoid a clockwork-regular pattern
 
 These measures don't make detection impossible — a determined page script could still compare prototype references or probe for patched behavior — but they avoid the low-hanging signals that fingerprinting scripts typically check. More importantly, there's nothing to detect server-side because xTap generates zero network activity of its own.
@@ -261,19 +261,35 @@ If the extension shows "Not connected" or a red "!" badge:
 
 The easiest way to change where tweets are saved is through the extension popup — click the xTap icon and enter your preferred path in the **Output directory** field.
 
-Alternatively, set the `XTAP_OUTPUT_DIR` environment variable before launching your browser:
+Alternatively, set the `XTAP_OUTPUT_DIR` environment variable and re-run the installer — the daemon runs as a system service (launchd/systemd/Scheduled Task), so the variable must be baked into the service definition; exporting it in a shell or before launching the browser has no effect:
 
 ```bash
 export XTAP_OUTPUT_DIR="$HOME/Documents/xtap-data"
+./native-host/install.sh <extension-id> [chrome|firefox]
 ```
+
+On Windows, set it as a *user* environment variable (`[Environment]::SetEnvironmentVariable('XTAP_OUTPUT_DIR', 'D:\\path', 'User')`) and re-run `install.ps1`.
 
 | Setting | Default | Description |
 |---|---|---|
 | Popup "Output directory" | *(empty — uses default)* | Overrides the output path per-session |
-| `XTAP_OUTPUT_DIR` env var | `~/Downloads/xtap` | Fallback when no popup setting is configured |
+| `XTAP_OUTPUT_DIR` env var | `~/Downloads/xtap` | Fallback when no popup setting is configured (set at install time) |
 | Debug Dashboard | — | Accessible via popup link; shows live capture events, transport health, debug logging and discovery mode toggles, and parser sandbox |
 
 > **macOS note:** On macOS, the HTTP daemon (installed via `install.sh`) runs outside browser TCC sandboxes and can write to protected paths like `~/Documents` and iCloud Drive after a one-time macOS permission prompt.
+
+### Download tuning
+
+These daemon environment variables are optional. Re-run the installer after changing them so the service definition picks them up.
+
+| Setting | Default | Description |
+|---|---:|---|
+| `XTAP_IMAGE_DELAY_MS` | `100` | Delay between background image requests |
+| `XTAP_MAX_FILE_MB` | `50` | Max size for one downloaded image |
+| `XTAP_MAX_MEDIA_MB` | *(unlimited)* | Max cumulative image bytes per daemon process |
+| `XTAP_MAX_VIDEO_MB` | `500` | Max size for one direct MP4 fallback video download; set `0` or less to disable the cap |
+| `XTAP_CONN_TIMEOUT_S` | `15` | Daemon per-connection socket timeout — drops idle/stalled connections; bad or `<=0` values fall back to the default (the timeout is never disabled) |
+| `XTAP_SHUTDOWN_GRACE_S` | `10` | Max seconds the daemon waits for in-flight requests at shutdown before force-exiting; bad or `<=0` values fall back to the default |
 
 ## Output Format
 

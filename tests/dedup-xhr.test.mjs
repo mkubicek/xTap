@@ -39,10 +39,11 @@ describe('dedupTweet (Bug 1: undefined poisoning)', () => {
     assert.equal(dedupTweet({ id: '2', text: 'second' }, seenIds), true);
   });
 
-  it('does not deduplicate article tweets even with same id', () => {
+  it('lets one full article enrich a previously seen non-article row', () => {
     const seenIds = new Set();
     assert.equal(dedupTweet({ id: '1', text: 'stub' }, seenIds), true);
     assert.equal(dedupTweet({ id: '1', text: 'full article', is_article: true }, seenIds), true);
+    assert.equal(dedupTweet({ id: '1', text: 'same full article', is_article: true }, seenIds), false);
   });
 
   it('respects pre-existing seenIds', () => {
@@ -109,6 +110,26 @@ describe('dedupTweet (image-backfill bypass)', () => {
     assert.ok(!imageCheckedIds.has('1'));
   });
 
+  it('does not bypass dedup for URL-less photo media', () => {
+    const seenIds = new Set(['1']);
+    const imageCheckedIds = new Set();
+    const opts = { imageBackfill: true, imageCheckedIds };
+    assert.equal(
+      dedupTweet({ id: '1', text: 'photo without URL', media: [{ type: 'photo' }] }, seenIds, opts),
+      false
+    );
+    assert.ok(!imageCheckedIds.has('1'));
+  });
+
+  it('handles null, empty, and mixed media defensively', () => {
+    const seenIds = new Set(['1']);
+    const opts = () => ({ imageBackfill: true, imageCheckedIds: new Set() });
+    assert.equal(dedupTweet({ id: '1', media: null }, seenIds, opts()), false);
+    assert.equal(dedupTweet({ id: '1', media: [] }, seenIds, opts()), false);
+    assert.equal(dedupTweet({ id: '1', media: [null, { type: 'photo', url: 'x' }] }, seenIds, opts()), true);
+    assert.equal(dedupTweet({ id: '1', media: [{ type: 'video' }, { type: 'photo', url: 'x' }] }, seenIds, opts()), true);
+  });
+
   it('does not bypass when imageBackfill is off (default)', () => {
     const seenIds = new Set(['1']);
     assert.equal(dedupTweet(photoTweet('1'), seenIds), false);
@@ -132,6 +153,18 @@ describe('dedupTweet (image-backfill bypass)', () => {
     const seenIds = new Set();
     assert.equal(dedupTweet({ id: '1', text: 'first' }, seenIds), true);
     assert.equal(dedupTweet({ id: '1', text: 'dupe' }, seenIds), false);
+  });
+
+  it('documents article tweets with photo media and imageBackfill', () => {
+    const seenIds = new Set(['1']);
+    const imageCheckedIds = new Set();
+    const tweet = {
+      id: '1',
+      is_article: true,
+      media: [{ type: 'photo', url: 'https://pbs.twimg.com/media/x.jpg:orig' }],
+    };
+    assert.equal(dedupTweet(tweet, seenIds, { imageBackfill: true, imageCheckedIds }), true);
+    assert.ok(imageCheckedIds.has('1'));
   });
 });
 
@@ -264,5 +297,23 @@ describe('XHR listener stacking — production content-main.js (Bug 2)', () => {
     );
     fireLoad(xhr, JSON.stringify({ data: {} }));
     assert.equal(env.dispatched.length, 0);
+  });
+});
+
+describe('XHR stale mapping — GraphQL open followed by non-GraphQL re-open', () => {
+  it('drops the stale mapping so the non-GraphQL response is not dispatched', () => {
+    const env = createBrowserEnv();
+    runInNewContext(contentMainCode, { ...env, console });
+
+    const xhr = new env.XMLHttpRequest();
+    env.XMLHttpRequest.prototype.open.call(
+      xhr, 'GET', 'https://x.com/i/api/graphql/abc/TweetDetail'
+    );
+    env.XMLHttpRequest.prototype.open.call(
+      xhr, 'GET', 'https://x.com/i/api/1.1/jot/client_event.json'
+    );
+    fireLoad(xhr, JSON.stringify({ not: 'graphql' }));
+    assert.equal(env.dispatched.length, 0,
+      'response of a non-GraphQL request must not be dispatched under the stale GraphQL URL');
   });
 });

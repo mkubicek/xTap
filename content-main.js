@@ -63,11 +63,17 @@
         xhrPatched.add(this);
         this.addEventListener('load', function () {
           try {
+            const mappedUrl = xhrUrls.get(this);
+            if (!mappedUrl) return;
             const data = JSON.parse(this.responseText);
-            dispatchData(xhrUrls.get(this), data);
+            dispatchData(mappedUrl, data);
           } catch (_) {}
         });
       }
+    } else {
+      // XHR object reused for a non-GraphQL request — drop the stale mapping
+      // so the load listener above ignores this response.
+      xhrUrls.delete(this);
     }
     return nativeOpen.call(this, method, url, ...rest);
   };
