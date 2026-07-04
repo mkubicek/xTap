@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "xTap",
-  "version": "0.23.2",
+  "version": "0.24.0",
   "description": "Passively captures tweets from X/Twitter as you browse",
   "permissions": ["storage", "nativeMessaging", "alarms"],
   "host_permissions": ["*://*.x.com/*", "*://*.twitter.com/*", "http://127.0.0.1/*"],
